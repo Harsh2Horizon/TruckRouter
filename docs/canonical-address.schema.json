@@ -1,0 +1,204 @@
+{
+  "$defs": {
+    "ExitReference": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "title": "Identifier",
+          "type": "string"
+        },
+        "highway_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Highway Key"
+        },
+        "association": {
+          "default": "unknown",
+          "title": "Association",
+          "type": "string"
+        },
+        "raw": {
+          "title": "Raw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "raw"
+      ],
+      "title": "ExitReference",
+      "type": "object"
+    },
+    "RoadNetwork": {
+      "enum": [
+        "interstate",
+        "us_highway",
+        "state_route",
+        "county_route",
+        "farm_to_market",
+        "provincial_highway",
+        "trans_canada",
+        "unknown_highway"
+      ],
+      "title": "RoadNetwork",
+      "type": "string"
+    },
+    "RoadReference": {
+      "additionalProperties": false,
+      "properties": {
+        "network": {
+          "$ref": "#/$defs/RoadNetwork"
+        },
+        "number": {
+          "title": "Number",
+          "type": "string"
+        },
+        "jurisdiction": {
+          "default": "",
+          "title": "Jurisdiction",
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/RouteVariant",
+          "default": "main"
+        },
+        "direction": {
+          "default": "",
+          "title": "Direction",
+          "type": "string"
+        },
+        "raw": {
+          "title": "Raw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "network",
+        "number",
+        "raw"
+      ],
+      "title": "RoadReference",
+      "type": "object"
+    },
+    "RouteVariant": {
+      "enum": [
+        "main",
+        "business",
+        "alternate",
+        "bypass",
+        "spur",
+        "loop"
+      ],
+      "title": "RouteVariant",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "raw_name": {
+      "default": "",
+      "title": "Raw Name",
+      "type": "string"
+    },
+    "raw_address": {
+      "default": "",
+      "title": "Raw Address",
+      "type": "string"
+    },
+    "name": {
+      "default": "",
+      "title": "Name",
+      "type": "string"
+    },
+    "brand": {
+      "default": "",
+      "title": "Brand",
+      "type": "string"
+    },
+    "brand_wikidata": {
+      "default": "",
+      "title": "Brand Wikidata",
+      "type": "string"
+    },
+    "store_id": {
+      "default": "",
+      "title": "Store Id",
+      "type": "string"
+    },
+    "house_number": {
+      "default": "",
+      "title": "House Number",
+      "type": "string"
+    },
+    "street": {
+      "default": "",
+      "title": "Street",
+      "type": "string"
+    },
+    "unit": {
+      "default": "",
+      "title": "Unit",
+      "type": "string"
+    },
+    "city": {
+      "default": "",
+      "title": "City",
+      "type": "string"
+    },
+    "state": {
+      "default": "",
+      "title": "State",
+      "type": "string"
+    },
+    "country": {
+      "default": "",
+      "title": "Country",
+      "type": "string"
+    },
+    "postcode": {
+      "default": "",
+      "title": "Postcode",
+      "type": "string"
+    },
+    "highways": {
+      "items": {
+        "$ref": "#/$defs/RoadReference"
+      },
+      "title": "Highways",
+      "type": "array"
+    },
+    "exits": {
+      "items": {
+        "$ref": "#/$defs/ExitReference"
+      },
+      "title": "Exits",
+      "type": "array"
+    },
+    "unparsed_address": {
+      "default": "",
+      "title": "Unparsed Address",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "title": "CanonicalAddress",
+  "type": "object"
+}

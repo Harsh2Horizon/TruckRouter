@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "raw_name": "KWIK TRIP #796",
+  "raw_address": "I-94, EXIT 143 & US-12 & SR-21",
+  "name": "KWIK TRIP 796",
+  "brand": "KWIK TRIP",
+  "brand_wikidata": "",
+  "store_id": "796",
+  "house_number": "",
+  "street": "",
+  "unit": "",
+  "city": "TOMAH",
+  "state": "WI",
+  "country": "US",
+  "postcode": "",
+  "highways": [
+    {
+      "network": "interstate",
+      "number": "94",
+      "jurisdiction": "US",
+      "variant": "main",
+      "direction": "",
+      "raw": "I-94"
+    },
+    {
+      "network": "us_highway",
+      "number": "12",
+      "jurisdiction": "US",
+      "variant": "main",
+      "direction": "",
+      "raw": "US-12"
+    },
+    {
+      "network": "state_route",
+      "number": "21",
+      "jurisdiction": "US-WI",
+      "variant": "main",
+      "direction": "",
+      "raw": "SR-21"
+    }
+  ],
+  "exits": [
+    {
+      "identifier": "143",
+      "highway_key": "US:interstate:94:main",
+      "association": "inferred_preceding_route",
+      "raw": "EXIT 143"
+    }
+  ],
+  "unparsed_address": "",
+  "warnings": [
+    "exit_associations_require_road_network_verification"
+  ]
+}
