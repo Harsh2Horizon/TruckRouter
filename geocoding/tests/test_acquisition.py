@@ -9,7 +9,7 @@ from unittest.mock import patch
 import duckdb
 from django.test import TestCase
 
-from geocoding.acquisition import FastDownloadClient, native_export, select_atp_members
+from geocoding.acquisition import DownloadClient, native_export, select_atp_members
 from geocoding.models import SourcePlace
 from geocoding.providers import osm
 from geocoding.services import bulk_save_places
@@ -18,7 +18,7 @@ from geocoding.services import bulk_save_places
 class AcquisitionTests(unittest.TestCase):
     def test_completed_partial_is_verified_and_finalized_without_another_network_request(self):
         with TemporaryDirectory() as directory:
-            client = FastDownloadClient(directory)
+            client = DownloadClient(directory)
             url = "https://example.test/source.parquet"
             key = hashlib.sha256(url.encode()).hexdigest()
             partial = Path(directory) / f"{key}.part"
@@ -32,7 +32,7 @@ class AcquisitionTests(unittest.TestCase):
 
     def test_incorrect_checksum_never_becomes_a_completed_cache_entry(self):
         with TemporaryDirectory() as directory:
-            client = FastDownloadClient(directory)
+            client = DownloadClient(directory)
             url = "https://example.test/source.parquet"
             key = hashlib.sha256(url.encode()).hexdigest()
             (Path(directory) / f"{key}.part").write_bytes(b"corrupt")

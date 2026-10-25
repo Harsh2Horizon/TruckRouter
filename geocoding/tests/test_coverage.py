@@ -14,7 +14,7 @@ from geocoding.coverage import CoverageResolver, SettlementIndex, parse_raw
 from geocoding.exports import comparison_row
 from geocoding.geography import apply_geographic_fallback
 from geocoding.matching import rank_candidates
-from geocoding.tests.test_domain import candidate, query
+from geocoding.tests.factories import candidate, query
 
 
 class CoverageTests(TestCase):
@@ -198,7 +198,7 @@ class CoverageTests(TestCase):
             "needs_review": True,
         }
         with patch(
-            "geocoding.management.commands.complete_geocoding_coverage.CoverageResolver",
+            "geocoding.completion.CoverageResolver",
             return_value=resolver,
         ):
             call_command(
@@ -254,7 +254,7 @@ class CoverageTests(TestCase):
                     writer.writeheader()
                     writer.writerow(row)
                 with patch(
-                    "geocoding.management.commands.complete_geocoding_coverage.CoverageResolver",
+                    "geocoding.completion.CoverageResolver",
                     return_value=resolver,
                 ):
                     call_command(

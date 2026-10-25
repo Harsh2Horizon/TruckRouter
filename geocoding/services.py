@@ -1,19 +1,18 @@
 from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Value, When
 
-from .matching import (
+from .matching import rank_candidates, update_highest_match
+from .models import FuelLocation, GeocodingRun, MatchCandidate, SourcePlace
+from .normalization import brand_key, city_key, locality_codes, store_key
+from .schemas import CanonicalAddress, Coordinate, PlaceCandidate
+from .scoring import (
     ALGORITHM_VERSION,
     business_name,
     city_similarity,
     identity_key,
     input_addresses_disagree,
-    rank_candidates,
     similarity,
-    update_highest_match,
 )
-from .models import FuelLocation, GeocodingRun, MatchCandidate, SourcePlace
-from .normalization import brand_key, city_key, locality_codes, store_key
-from .schemas import CanonicalAddress, Coordinate, PlaceCandidate
 
 
 def place_values(candidate: PlaceCandidate) -> dict:
@@ -57,16 +56,6 @@ def bulk_save_places(candidates: list[PlaceCandidate]) -> int:
             update_fields=[*place_values(candidates[0]), "imported_at"],
         )
     return len(candidates)
-
-
-def save_place(candidate: PlaceCandidate) -> SourcePlace:
-    place, _ = SourcePlace.objects.update_or_create(
-        provider=candidate.provider,
-        namespace=candidate.namespace,
-        source_id=candidate.source_id,
-        defaults=place_values(candidate),
-    )
-    return place
 
 
 def as_candidate(place: SourcePlace) -> PlaceCandidate:

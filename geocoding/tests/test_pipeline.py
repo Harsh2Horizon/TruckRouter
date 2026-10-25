@@ -5,17 +5,16 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-import httpx
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
-from django.test import TestCase, override_settings
+from django.test import TestCase
 
 from geocoding.ingestion import import_fuel_csv
-from geocoding.live import NominatimClient
 from geocoding.models import FuelLocation, FuelObservation, GeocodingRun, SourcePlace
-from geocoding.services import resolve, save_place
-from geocoding.tests.test_domain import candidate, query
+from geocoding.pipeline import import_source
+from geocoding.services import resolve
+from geocoding.tests.factories import candidate, query, save_place
 
 
 class PipelineTests(TestCase):
@@ -129,19 +128,6 @@ class PipelineTests(TestCase):
         self.assertEqual(response.json(), lookup.json())
         self.assertEqual(GeocodingRun.objects.count(), 1)
 
-    def test_import_places_rolls_back_a_malformed_record(self):
-        export = Path(self.temp.name) / "places.jsonl"
-        export.write_text(
-            json.dumps({"id": "a", "properties": {"@spider": "demo", "name": "test"}})
-            + "\n"
-            + json.dumps({"id": "b", "properties": {"name": "test"}})
-        )
-        with self.assertRaises(CommandError):
-            call_command(
-                "import_places", "alltheplaces", str(export), format="ndjson", release="test"
-            )
-        self.assertFalse(SourcePlace.objects.exists())
-
     def test_zero_candidates_are_unmatched(self):
         result = resolve(query())
         self.assertEqual(result.status, "unmatched")
@@ -204,17 +190,14 @@ class PipelineTests(TestCase):
         )
         output = root / "rescored"
         with (
-            patch(
-                "geocoding.management.commands.run_geocoding_pipeline.import_fuel_csv"
-            ) as importer,
-            patch("geocoding.management.commands.run_geocoding_pipeline.bulk_save_places") as saver,
-            patch("geocoding.downloads.urlopen") as network,
+            patch("geocoding.pipeline.import_fuel_csv") as importer,
+            patch("geocoding.pipeline.bulk_save_places") as saver,
+            patch("geocoding.acquisition.subprocess.run") as network,
         ):
             call_command(
                 "run_geocoding_pipeline",
                 csv=str(self.csv),
                 output_dir=str(output),
-                data_dir=str(root / "cache"),
                 acquisition_report=str(acquisition),
                 reuse_import_report=str(prior),
                 stdout=io.StringIO(),
@@ -252,6 +235,106 @@ class PipelineTests(TestCase):
         self.assertEqual(final[0]["prediction_method"], "fuel_poi")
         self.assertEqual(report["coordinate_deviation"]["severity_counts"], {"consistent": 1})
 
+    def test_broken_source_export_rolls_back_even_after_a_batch_has_been_written(self):
+        root = Path(self.temp.name)
+        export = root / "source.ndjson"
+        record = {
+            "type": "node",
+            "lat": 44,
+            "lon": -90.5,
+            "tags": {"name": "Fuel", "amenity": "fuel"},
+        }
+        export.write_text(
+            "".join(json.dumps({**record, "id": i}) + "\n" for i in range(500)) + "invalid json\n"
+        )
+        with self.assertRaises(ValueError):
+            import_source(
+                "osm", {"filename": str(export), "release": "test", "format": "ndjson"}, root
+            )
+        self.assertFalse(SourcePlace.objects.exists())
+
+    def test_empty_source_is_rejected_instead_of_recording_a_successful_import(self):
+        root = Path(self.temp.name)
+        export = root / "source.ndjson"
+        export.write_text("")
+        with self.assertRaisesRegex(ValueError, "zero usable records"):
+            import_source(
+                "osm", {"filename": str(export), "release": "test", "format": "ndjson"}, root
+            )
+
+    def test_incomplete_acquisition_fails_before_importing_or_matching(self):
+        root = Path(self.temp.name)
+        acquisition = root / "acquisition.json"
+        import hashlib
+
+        acquisition.write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "sources": {},
+                    "dataset_sha256": hashlib.sha256(self.csv.read_bytes()).hexdigest(),
+                }
+            )
+        )
+        with self.assertRaisesRegex(CommandError, "Acquisition is not complete"):
+            call_command(
+                "run_geocoding_pipeline",
+                csv=str(self.csv),
+                acquisition_report=str(acquisition),
+                output_dir=str(root / "output"),
+            )
+        self.assertFalse(FuelObservation.objects.exists())
+        self.assertFalse(GeocodingRun.objects.exists())
+
+    def test_import_only_stage_creates_reusable_indexes_without_matching(self):
+        import hashlib
+
+        root = Path(self.temp.name)
+        examples = {
+            "alltheplaces": {"id": "one", "properties": {"@spider": "test", "name": "Fuel"}},
+            "overture": {"id": "one", "properties": {"names": {"primary": "Fuel"}}},
+            "osm": {"type": "node", "id": 1, "tags": {"name": "Fuel"}},
+        }
+        sources = {}
+        for provider, example in examples.items():
+            path = root / f"{provider}.ndjson"
+            path.write_text(json.dumps(example) + "\n")
+            sources[provider] = {
+                "status": "downloaded",
+                "provider": provider,
+                "release": "test",
+                "filename": str(path),
+                "format": "ndjson",
+            }
+        acquisition = root / "acquisition.json"
+        acquisition.write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "sources": sources,
+                    "dataset_sha256": hashlib.sha256(self.csv.read_bytes()).hexdigest(),
+                }
+            )
+        )
+        output = root / "import-only"
+        with patch("geocoding.pipeline.resolve") as resolver:
+            call_command(
+                "run_geocoding_pipeline",
+                csv=str(self.csv),
+                acquisition_report=str(acquisition),
+                output_dir=str(output),
+                import_only=True,
+                stdout=io.StringIO(),
+            )
+        resolver.assert_not_called()
+        self.assertEqual(SourcePlace.objects.count(), 3)
+        self.assertEqual(FuelObservation.objects.count(), 2)
+        self.assertFalse((output / "geocodes.csv").exists())
+        report = json.loads((output / "report.json").read_text())
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["phase"], "imported")
+        self.assertTrue(all(r["unique_stored_records"] == 1 for r in report["sources"].values()))
+
     def test_brand_alias_upgrade_does_not_create_an_input_conflict(self):
         self.csv.write_text(
             self.csv.read_text().replace("KWIK TRIP #796", "MAVERIK COUNTRY STORE #796")
@@ -263,41 +346,3 @@ class PipelineTests(TestCase):
         import_fuel_csv(str(self.csv))
         location.refresh_from_db()
         self.assertEqual(location.warnings, [])
-
-
-class LiveClientTests(TestCase):
-    def test_public_service_is_blocked(self):
-        with self.assertRaises(ValueError):
-            NominatimClient("https://nominatim.openstreetmap.org", "test-app")
-
-    @override_settings(NOMINATIM_BASE_URL="http://localhost:8080", GEOCODER_USER_AGENT="test-app")
-    def test_search_is_cached_and_uses_poi_query(self):
-        seen = []
-
-        def handler(request):
-            seen.append(request)
-            return httpx.Response(
-                200,
-                json=[
-                    {
-                        "osm_type": "node",
-                        "osm_id": 10,
-                        "lat": "44",
-                        "lon": "-90.5",
-                        "name": "Kwik Trip #796",
-                        "type": "fuel",
-                        "class": "amenity",
-                        "address": {"city": "Tomah", "state": "Wisconsin", "country_code": "us"},
-                    }
-                ],
-            )
-
-        with httpx.Client(transport=httpx.MockTransport(handler)) as transport:
-            client = NominatimClient(client=transport)
-            with patch("geocoding.live.time.sleep"):
-                first = client.search(query())
-                second = client.search(query())
-        self.assertEqual(len(seen), 1)
-        self.assertEqual(first, second)
-        self.assertNotIn("EXIT", seen[0].url.params["q"])
-        self.assertEqual(first[0].address.store_id, "796")

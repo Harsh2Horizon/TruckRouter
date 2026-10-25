@@ -12,14 +12,14 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 
 from geocoding.acquisition import (
-    FastDownloadClient,
+    DownloadClient,
     acquire_atp,
     acquire_osm,
     acquire_overture,
     write_json,
 )
-from geocoding.downloads import NORTH_AMERICA_BBOX, parse_bbox
 from geocoding.parsing import parse_address
+from geocoding.source_queries import NORTH_AMERICA_BBOX, parse_bbox
 
 
 class Command(BaseCommand):
@@ -74,7 +74,7 @@ class Command(BaseCommand):
         spiders = None
         if options["atp_spiders_file"]:
             spiders = json.loads(Path(options["atp_spiders_file"]).read_text())
-        client = FastDownloadClient(
+        client = DownloadClient(
             options["data_dir"],
             os.getenv("GEOCODER_USER_AGENT", "truckroute/0.1 local research pipeline"),
         )

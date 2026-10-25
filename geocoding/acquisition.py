@@ -12,14 +12,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urljoin
 
-from .downloads import (
+from .normalization import brand_key
+from .source_queries import (
     NORTH_AMERICA_BBOX,
-    DownloadClient,
     atp_feature_relevant,
     overture_plan,
     overture_sql,
 )
-from .normalization import brand_key
 
 
 def write_json(path, value):
@@ -29,11 +28,13 @@ def write_json(path, value):
     temporary.replace(path)
 
 
-class FastDownloadClient(DownloadClient):
+class DownloadClient:
     """curl supplies bounded connect time, retries, compression and transfer resumption."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, directory, user_agent="truckroute/0.1 local research pipeline"):
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.user_agent = user_agent
         self._transfers = {}
         self._transfer_lock = threading.Lock()
 
@@ -71,8 +72,8 @@ class FastDownloadClient(DownloadClient):
         )
         return json.loads(result.stdout)
 
-    def fetch(self, url, *, data=None, timeout=300, expected_bytes=None, sha256=None):
-        key = hashlib.sha256(url.encode() + (data or b"")).hexdigest()
+    def fetch(self, url, *, timeout=300, expected_bytes=None, sha256=None):
+        key = hashlib.sha256(url.encode()).hexdigest()
         destination = self.directory / key
         if destination.exists():
             if expected_bytes is None or destination.stat().st_size == expected_bytes:
@@ -100,15 +101,7 @@ class FastDownloadClient(DownloadClient):
             "-w",
             "%{url_effective}",
         ]
-        if data is None:
-            command += ["-C", "-"]
-        else:
-            command += [
-                "--data-binary",
-                "@-",
-                "-H",
-                "Content-Type: application/x-www-form-urlencoded",
-            ]
+        command += ["-C", "-"]
         already_transferred = (
             expected_bytes is not None
             and partial.exists()
@@ -120,7 +113,7 @@ class FastDownloadClient(DownloadClient):
             with self._transfer_lock:
                 self._transfers[url] = (url, partial, expected_bytes)
             try:
-                result = subprocess.run(command + [url], input=data, capture_output=True)
+                result = subprocess.run(command + [url], capture_output=True)
             finally:
                 with self._transfer_lock:
                     self._transfers.pop(url, None)

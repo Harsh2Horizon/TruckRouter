@@ -11,7 +11,7 @@ from django.db import connection, transaction
 from django.db.models import Q
 from psycopg.types.json import Jsonb
 
-from geocoding.acquisition import FastDownloadClient, duckdb_connection, write_json
+from geocoding.acquisition import DownloadClient, duckdb_connection, write_json
 from geocoding.locality_enrichment import VERSION, audit_sources, enrich_record
 from geocoding.models import SourcePlace
 from geocoding.normalization import city_key, text_key
@@ -82,7 +82,7 @@ class Command(BaseCommand):
                     )
         self.stdout.write(f"Mapping {len(pending):,} records with missing locality fields")
         self.stdout.flush()
-        with duckdb_connection(FastDownloadClient("data/sources")) as db:
+        with duckdb_connection(DownloadClient("data/sources")) as db:
             db.execute("SET memory_limit='4GB'")
             db.execute("SET threads=2")
             db.execute(

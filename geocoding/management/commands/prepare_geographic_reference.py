@@ -6,7 +6,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
-from geocoding.acquisition import FastDownloadClient, write_json
+from geocoding.acquisition import DownloadClient, write_json
 from geocoding.geography import REFERENCE_DIR, build_reference, get_exit_locator
 
 
@@ -20,7 +20,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         directory = Path(options["directory"])
-        client = FastDownloadClient(directory)
+        client = DownloadClient(directory)
         if not options["cached_only"]:
             release = client.json(
                 "https://api.github.com/repos/tldev/openinterstate/releases/latest"

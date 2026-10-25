@@ -6,10 +6,10 @@ from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 
-from .acquisition import FastDownloadClient, duckdb_connection, native_export, write_json
-from .matching import city_similarity, distance_meters
+from .acquisition import DownloadClient, duckdb_connection, native_export, write_json
 from .normalization import city_key
 from .schemas import Coordinate, RoadNetwork
+from .scoring import city_similarity, distance_meters
 
 REFERENCE_DIR = Path(__file__).resolve().parent.parent / "data/reference"
 MAX_CITY_EXIT_DISTANCE_M = 20000.0
@@ -32,7 +32,7 @@ def build_reference(directory=REFERENCE_DIR):
     states = json.loads((directory / "usa-states-manifest.json").read_text())
     release = json.loads((directory / "interstate-release.json").read_text())
     boundaries = json.loads(Path(states["filename"]).read_text())
-    client = FastDownloadClient(REFERENCE_DIR.parent / "sources")
+    client = DownloadClient(REFERENCE_DIR.parent / "sources")
     with duckdb_connection(client) as connection:
         connection.execute("CREATE TABLE states (state VARCHAR, geometry GEOMETRY)")
         connection.executemany(

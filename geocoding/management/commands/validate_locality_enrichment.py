@@ -9,7 +9,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
-from geocoding.acquisition import FastDownloadClient, duckdb_connection, write_json
+from geocoding.acquisition import DownloadClient, duckdb_connection, write_json
 from geocoding.locality_enrichment import audit_sources
 from geocoding.models import SourcePlace
 from geocoding.normalization import text_key
@@ -129,7 +129,7 @@ class Command(BaseCommand):
             )
         )
         manifest = report["reference_manifest"]
-        with duckdb_connection(FastDownloadClient("data/sources")) as db:
+        with duckdb_connection(DownloadClient("data/sources")) as db:
             db.execute("SET memory_limit='4GB'")
             db.execute("SET threads=2")
             db.execute(

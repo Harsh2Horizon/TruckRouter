@@ -6,9 +6,10 @@ from unittest import TestCase
 from django.test import TestCase as DatabaseTestCase
 
 from geocoding.exports import comparison_row, enrich_input_csv
-from geocoding.matching import WEIGHTS, rank_candidates, score_addresses
-from geocoding.services import resolve, retrieve_candidates, save_place
-from geocoding.tests.test_domain import candidate, query
+from geocoding.matching import rank_candidates
+from geocoding.scoring import WEIGHTS, score_addresses
+from geocoding.services import resolve, retrieve_candidates
+from geocoding.tests.factories import candidate, query, save_place
 
 
 class EvidenceScoreTests(TestCase):
@@ -40,7 +41,7 @@ class EvidenceScoreTests(TestCase):
     def test_brand_aliases_apply_to_existing_canonical_records(self):
         left = query(name="FLYING J TRAVEL PLAZA #10")
         right = query(name="FLYING J #10")
-        left.brand = "FLYING J TRAVEL PLAZA"  # A record imported before v2.
+        left.brand = "FLYING J TRAVEL PLAZA"  # A provider record using an unabbreviated brand.
         score = score_addresses(left, right)
         self.assertEqual(score.components["name"], 1)
 

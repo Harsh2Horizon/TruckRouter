@@ -10,7 +10,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
-from geocoding.acquisition import FastDownloadClient, duckdb_connection, write_json
+from geocoding.acquisition import DownloadClient, duckdb_connection, write_json
 from geocoding.normalization import SUBDIVISIONS, locality_codes
 from geocoding.parsing import parse_address
 
@@ -24,7 +24,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         directory = Path(options["directory"])
         directory.mkdir(parents=True, exist_ok=True)
-        client = FastDownloadClient(directory / "downloads")
+        client = DownloadClient(directory / "downloads")
         urls = {
             "admin1": "https://download.geonames.org/export/dump/admin1CodesASCII.txt",
             "US": "https://download.geonames.org/export/dump/US.zip",
@@ -94,7 +94,7 @@ class Command(BaseCommand):
                 if name in package.namelist():
                     (roads_dir / name).write_bytes(package.read(name))
         road_file = directory / "tiger-primaryroads.parquet"
-        with duckdb_connection(FastDownloadClient("data/sources")) as connection:
+        with duckdb_connection(DownloadClient("data/sources")) as connection:
             connection.execute(
                 "CREATE TABLE raw_roads AS SELECT * FROM ST_Read(?)",
                 [str(roads_dir / f"{basename}.shp")],

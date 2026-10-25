@@ -7,13 +7,13 @@ from functools import lru_cache
 from pathlib import Path
 from threading import RLock
 
-from .acquisition import FastDownloadClient, duckdb_connection
+from .acquisition import DownloadClient, duckdb_connection
 from .census import address_key
 from .geography import boundary_state_code, get_exit_locator
-from .matching import city_similarity, distance_meters
 from .normalization import city_key
 from .parsing import parse_address
 from .schemas import Coordinate, RoadNetwork
+from .scoring import city_similarity, distance_meters
 
 VERSION = "coverage-4.0"
 CITY_RADIUS_M = 20000.0
@@ -117,7 +117,7 @@ class SettlementIndex:
 
 class TigerRoadLocator:
     def __init__(self, manifest):
-        self.connection = duckdb_connection(FastDownloadClient("data/sources"))
+        self.connection = duckdb_connection(DownloadClient("data/sources"))
         self.connection.execute(
             "CREATE TABLE roads AS SELECT * FROM read_parquet(?)", [manifest["roads_file"]]
         )

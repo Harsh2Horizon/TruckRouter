@@ -6,9 +6,10 @@ from unittest.mock import patch
 
 from geocoding.exports import comparison_row
 from geocoding.geography import ExitLocator, apply_geographic_fallback, boundary_state_code
-from geocoding.matching import WEIGHTS, input_addresses_disagree, rank_candidates, score_addresses
+from geocoding.matching import rank_candidates
 from geocoding.parsing import parse_address
-from geocoding.tests.test_domain import candidate, query
+from geocoding.scoring import WEIGHTS, input_addresses_disagree, score_addresses
+from geocoding.tests.factories import candidate, query
 
 
 class BrandLocalityTests(TestCase):

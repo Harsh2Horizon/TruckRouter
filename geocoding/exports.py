@@ -4,7 +4,7 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from .matching import ALGORITHM_VERSION, business_name
+from .scoring import ALGORITHM_VERSION, business_name
 
 PROVIDERS = ("alltheplaces", "overture", "osm")
 SOURCE_FIELDS = (

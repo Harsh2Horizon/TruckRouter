@@ -155,11 +155,7 @@ def osm(element: dict, release: str = "") -> PlaceCandidate:
     if not address.country and context.get("country") in {"US", "CA"}:
         address.country = context["country"]
         address.warnings = [warning for warning in address.warnings if warning != "country_unknown"]
-        address.warnings.append(
-            "country_from_source_region"
-            if context.get("mirror")
-            else "country_from_overpass_query_area"
-        )
+        address.warnings.append("country_from_source_region")
     if not address.state and context.get("mirror") and context.get("state"):
         state, country = subdivision(context["state"], context.get("country", ""))
         if country == address.country:
@@ -187,38 +183,4 @@ def osm(element: dict, release: str = "") -> PlaceCandidate:
     )
 
 
-def nominatim(record: dict, release: str = "") -> PlaceCandidate:
-    names = record.get("namedetails") or {}
-    extra = record.get("extratags") or {}
-    address = record.get("address") or {}
-    iso_state = next((v for k, v in address.items() if k.startswith("ISO3166-2-lvl")), "")
-    tags = {
-        **extra,
-        "name": record.get("name") or names.get("name") or address.get("amenity") or "UNKNOWN",
-        "brand": extra.get("brand") or names.get("brand") or "",
-        "ref:store": extra.get("ref:store") or "",  # generic ref remains opaque
-        "addr:housenumber": address.get("house_number", ""),
-        "addr:street": address.get("road", ""),
-        "addr:city": address.get("city") or address.get("town") or address.get("village") or "",
-        "addr:state": iso_state or address.get("state", ""),
-        "addr:country": address.get("country_code", ""),
-        "addr:postcode": address.get("postcode", ""),
-    }
-    if record.get("type") == "fuel":
-        tags["amenity"] = "fuel"
-    candidate = osm(
-        {
-            "type": record.get("osm_type"),
-            "id": record.get("osm_id"),
-            "lat": record["lat"],
-            "lon": record["lon"],
-            "tags": tags,
-        },
-        release,
-    )
-    candidate.raw = record
-    # Nominatim place_id is installation-specific: use osm_type/osm_id instead.
-    return candidate
-
-
-ADAPTERS = {"alltheplaces": alltheplaces, "overture": overture, "osm": osm, "nominatim": nominatim}
+ADAPTERS = {"alltheplaces": alltheplaces, "overture": overture, "osm": osm}

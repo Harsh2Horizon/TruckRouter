@@ -8,7 +8,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
-from geocoding.acquisition import FastDownloadClient, duckdb_connection, write_json
+from geocoding.acquisition import DownloadClient, duckdb_connection, write_json
 from geocoding.normalization import SUBDIVISIONS, locality_codes
 
 
@@ -45,7 +45,7 @@ class Command(BaseCommand):
         if manifest_file.exists():
             self.stdout.write(manifest_file.read_text())
             return
-        client = FastDownloadClient(directory / "downloads")
+        client = DownloadClient(directory / "downloads")
         urls = {
             "us_states": "https://www2.census.gov/geo/tiger/TIGER2026/STATE/tl_2026_us_state.zip",
         }
@@ -61,7 +61,7 @@ class Command(BaseCommand):
 
         with ThreadPoolExecutor(max_workers=3) as pool:
             files = dict(pool.map(fetch, urls.items()))
-        with duckdb_connection(FastDownloadClient("data/sources")) as connection:
+        with duckdb_connection(DownloadClient("data/sources")) as connection:
             connection.execute("SET memory_limit='4GB'")
             connection.execute("SET threads=2")
             connection.execute(

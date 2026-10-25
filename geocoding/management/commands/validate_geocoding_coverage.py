@@ -7,7 +7,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
-from geocoding.acquisition import FastDownloadClient, duckdb_connection, write_json
+from geocoding.acquisition import DownloadClient, duckdb_connection, write_json
 from geocoding.geography import boundary_state_code
 from geocoding.models import SourcePlace
 from geocoding.normalization import locality_codes
@@ -22,8 +22,8 @@ class Command(BaseCommand):
     help = "Check every coverage row and independently check US state containment"
 
     def add_arguments(self, parser):
-        parser.add_argument("--run", default="output/geocoding-v4")
-        parser.add_argument("--base-run", default="output/geocoding-v3")
+        parser.add_argument("--run", default="output/coverage")
+        parser.add_argument("--base-run", default="output/geocoding")
         parser.add_argument("--csv", default="fuel-prices-for-be-assessment.csv")
 
     def handle(self, *args, **options):
@@ -86,7 +86,7 @@ class Command(BaseCommand):
                 assert row["Exit Matched"] == "False"
         metadata = json.loads(Path("data/reference/usa-states-manifest.json").read_text())
         geometry = json.loads(Path(metadata["filename"]).read_text())
-        with duckdb_connection(FastDownloadClient("data/sources")) as connection:
+        with duckdb_connection(DownloadClient("data/sources")) as connection:
             connection.execute(
                 "CREATE TABLE points (row_number INTEGER,country VARCHAR,state VARCHAR,"
                 "latitude DOUBLE,longitude DOUBLE,method VARCHAR)"

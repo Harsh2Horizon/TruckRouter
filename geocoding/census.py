@@ -7,10 +7,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlencode
 
-from .acquisition import FastDownloadClient, write_json
-from .matching import city_similarity
+from .acquisition import DownloadClient, write_json
 from .normalization import city_key, locality_codes
 from .schemas import Coordinate
+from .scoring import city_similarity
 
 
 def address_key(query):
@@ -33,7 +33,7 @@ def eligible_address(query):
 
 def fetch_addresses(queries, directory="data/reference/coverage"):
     directory = Path(directory)
-    client = FastDownloadClient(directory / "census-downloads")
+    client = DownloadClient(directory / "census-downloads")
     index_path = directory / "census-addresses.json"
     index = json.loads(index_path.read_text()) if index_path.exists() else {}
     unique = {address_key(query): query for query in queries if eligible_address(query)}

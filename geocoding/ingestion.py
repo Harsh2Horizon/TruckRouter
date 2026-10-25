@@ -4,25 +4,20 @@ import json
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-import ijson
 from django.db import transaction
 
-from .matching import input_addresses_disagree
 from .models import FuelLocation, FuelObservation
 from .parsing import parse_address
 from .schemas import CanonicalAddress
+from .scoring import input_addresses_disagree
 
 
-def records_from_file(filename: str, file_format: str):
-    """Stream per-provider exports. GeoParquet must be exported to GeoJSON upstream."""
-    with Path(filename).open("rb") as stream:
-        if file_format == "ndjson":
-            for line in stream:
-                if line.strip():
-                    yield json.loads(line)
-        else:
-            prefixes = {"geojson": "features.item", "overpass": "elements.item", "json": "item"}
-            yield from ijson.items(stream, prefixes[file_format], use_float=True)
+def records_from_file(filename):
+    """The acquisition stage writes one source record per NDJSON line."""
+    with Path(filename).open() as stream:
+        for line in stream:
+            if line.strip():
+                yield json.loads(line)
 
 
 @transaction.atomic

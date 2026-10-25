@@ -1,10 +1,10 @@
 from copy import deepcopy
 from unittest import TestCase
 
-from geocoding.locality_enrichment import enrich_record, original_locality_address
+from geocoding.locality_enrichment import enrich_record
 from geocoding.matching import rank_candidates
 from geocoding.normalization import BOUNDARY_CITY_WARNING, NEAREST_CITY_WARNING, city_key
-from geocoding.tests.test_domain import candidate, query
+from geocoding.tests.factories import candidate, query
 
 
 class LocalityEnrichmentTests(TestCase):
@@ -94,12 +94,6 @@ class LocalityEnrichmentTests(TestCase):
     def test_non_indexable_city_is_not_recorded_as_a_successful_fill(self):
         record = self.record(state="WI")
         self.assertIsNone(enrich_record(record, {**self.mapping(), "city": "ᑰᔾᔪᐊᖅ"}, "test"))
-
-    def test_historical_audit_recovers_provider_fields_before_enrichment(self):
-        record = self.record()
-        enriched = enrich_record(record, self.mapping("nearest_settlement"), "today")
-        restored = original_locality_address(enriched["address"], enriched["provenance"])
-        self.assertEqual(restored, record["address"])
 
     def test_census_legal_city_labels_match_common_names_without_generic_suffix_stripping(self):
         self.assertEqual(city_key("Indianapolis city (balance)"), city_key("Indianapolis"))

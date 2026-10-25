@@ -1,6 +1,5 @@
 """Normalize and profile the supplied feed without a Django database or network access."""
 
-import argparse
 import csv
 import json
 from collections import Counter
@@ -44,11 +43,3 @@ def profile_csv(filename: str, output_dir: str) -> dict:
     report = {**dict(counts), "unique_ids": len(identities), "geocodes_verified": 0}
     (destination / "parser-report.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("filename")
-    parser.add_argument("--output-dir", default="output")
-    options = parser.parse_args()
-    print(json.dumps(profile_csv(options.filename, options.output_dir), indent=2))

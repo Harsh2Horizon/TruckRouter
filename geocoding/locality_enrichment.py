@@ -102,20 +102,3 @@ def enrich_record(record, mapping, performed_at):
     )
     updated["filled_fields"] = filled
     return updated
-
-
-def original_locality_address(address, provenance):
-    """Recover the pre-enrichment address when auditing an older saved run."""
-    restored = deepcopy(address)
-    original = next(
-        (p.get("original") for p in provenance if p.get("dataset") == "locality_enrichment"), None
-    )
-    if original:
-        for key in ("city", "state", "country"):
-            restored[key] = original[key]
-        restored["warnings"] = [
-            w
-            for w in restored.get("warnings", [])
-            if w not in {NEAREST_CITY_WARNING, BOUNDARY_CITY_WARNING}
-        ]
-    return restored

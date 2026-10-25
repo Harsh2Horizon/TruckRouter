@@ -4,35 +4,13 @@ import unittest
 
 from pydantic import ValidationError
 
-from geocoding.matching import distance_meters, rank_candidates, score_addresses
+from geocoding.matching import rank_candidates
 from geocoding.normalization import brand_key, store_key
 from geocoding.parsing import parse_address
-from geocoding.providers import alltheplaces, nominatim, osm, overture
-from geocoding.schemas import Coordinate, PlaceCandidate, RoadNetwork
-
-
-def query(**changes):
-    return parse_address(
-        {
-            "name": "KWIK TRIP #796",
-            "address": "I-94, EXIT 143 & US-12 & SR-21",
-            "city": "Tomah",
-            "state": "WI",
-            **changes,
-        }
-    )
-
-
-def candidate(source_id="one", *, latitude=44.0, longitude=-90.5, **changes):
-    # These are deliberately synthetic points, not verified coordinates of store 796.
-    return PlaceCandidate(
-        provider="test",
-        namespace="synthetic",
-        source_id=source_id,
-        address=query(**changes),
-        coordinate=Coordinate(latitude=latitude, longitude=longitude),
-        precision="poi",
-    )
+from geocoding.providers import alltheplaces, osm, overture
+from geocoding.schemas import Coordinate, RoadNetwork
+from geocoding.scoring import distance_meters, score_addresses
+from geocoding.tests.factories import candidate, query
 
 
 class ParsingTests(unittest.TestCase):
@@ -280,22 +258,6 @@ class AdapterTests(unittest.TestCase):
         )
         self.assertEqual((item.provider, item.namespace, item.source_id), ("osm", "way", "42"))
         self.assertEqual(item.precision, "poi_center")
-
-    def test_nominatim_uses_osm_identity_and_rejects_generic_precision(self):
-        item = nominatim(
-            {
-                "place_id": 999,
-                "osm_type": "relation",
-                "osm_id": 42,
-                "lat": "44",
-                "lon": "-90.5",
-                "type": "city",
-                "name": "Tomah",
-                "address": {"city": "Tomah", "state": "Wisconsin", "country_code": "us"},
-            }
-        )
-        self.assertEqual(item.source_id, "42")
-        self.assertEqual(item.precision, "unknown")
 
     def test_invalid_coordinate_and_unknown_identity_fail(self):
         with self.assertRaises(ValueError):
