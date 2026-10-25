@@ -31,7 +31,7 @@ def fetch_candidates(route, *, corridor_miles, detour_multiplier, max_candidates
         WHERE o.retail_price IS NOT NULL AND o.retail_price >= 0
           AND o.retail_price < 'Infinity'::numeric
         GROUP BY c.id,c.external_id,c.address,c.resolved_coordinate
-        ORDER BY c.id LIMIT %s  
+        ORDER BY c.id LIMIT %s
     """
 
     with connection.cursor() as cursor:

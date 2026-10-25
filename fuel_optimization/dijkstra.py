@@ -11,7 +11,7 @@ STEP_PRICE = Decimal("0.5")
 
 
 def optimize(graph: RouteGraph, *, max_states=250_000) -> Plan:
-    
+
     distances, parents, settled = {}, {}, set()
     queue, sequence = [], count()
     stats = {
