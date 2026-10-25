@@ -1,0 +1,717 @@
+[
+  {
+    "id": "1",
+    "title": "New York \u2192 Boston",
+    "focus": "Zero-refuel trip",
+    "request": {
+      "origin": {
+        "latitude": 40.7128,
+        "longitude": -74.006
+      },
+      "destination": {
+        "latitude": 42.3601,
+        "longitude": -71.0589
+      },
+      "corridor_miles": 5,
+      "detour_multiplier": 1.4
+    },
+    "results": {
+      "greedy": {
+        "http_status": 200,
+        "elapsed_seconds": 1.53,
+        "summary": {
+          "base_distance_miles": 213.614305,
+          "estimated_detour_miles": 0.0,
+          "estimated_total_distance_miles": 213.614305,
+          "total_gallons_purchased": 0.0,
+          "total_fuel_cost": 0.0,
+          "remaining_fuel_gallons": 28.63857,
+          "fuel_stop_count": 0
+        },
+        "candidate_count": 12,
+        "algorithm_execution_time_ms": 0.107,
+        "stops": [],
+        "diagnostics": {
+          "strategy": "next_cheaper_detour_adjusted",
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      },
+      "dijkstra": {
+        "http_status": 200,
+        "elapsed_seconds": 1.38,
+        "summary": {
+          "base_distance_miles": 213.614305,
+          "estimated_detour_miles": 0.0,
+          "estimated_total_distance_miles": 213.614305,
+          "total_gallons_purchased": 0.0,
+          "total_fuel_cost": 0.0,
+          "remaining_fuel_gallons": 28.63857,
+          "fuel_stop_count": 0
+        },
+        "candidate_count": 12,
+        "algorithm_execution_time_ms": 0.08,
+        "stops": [],
+        "diagnostics": {
+          "states_discovered": 0,
+          "states_expanded": 0,
+          "distance_updates": 0,
+          "heap_stale_pops": 0,
+          "fuel_step_gallons": 0.5,
+          "discrete_objective_cost": "0",
+          "discrete_remaining_fuel_gallons": 28.5,
+          "short_circuit": "initial_tank_suffices",
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      }
+    }
+  },
+  {
+    "id": "2",
+    "title": "New York \u2192 Chicago",
+    "focus": "Single-stop versus multi-stop choices",
+    "request": {
+      "origin": {
+        "latitude": 40.7128,
+        "longitude": -74.006
+      },
+      "destination": {
+        "latitude": 41.8781,
+        "longitude": -87.6298
+      },
+      "corridor_miles": 5,
+      "detour_multiplier": 1.4
+    },
+    "results": {
+      "greedy": {
+        "http_status": 200,
+        "elapsed_seconds": 1.69,
+        "summary": {
+          "base_distance_miles": 790.508741,
+          "estimated_detour_miles": 7.370806,
+          "estimated_total_distance_miles": 797.879548,
+          "total_gallons_purchased": 29.787955,
+          "total_fuel_cost": 91.409334,
+          "remaining_fuel_gallons": 0.0,
+          "fuel_stop_count": 2
+        },
+        "candidate_count": 64,
+        "algorithm_execution_time_ms": 0.544,
+        "stops": [
+          {
+            "location_id": 1483,
+            "external_id": "52669",
+            "name": "COLUMBIA TRUCK STOP",
+            "latitude": 40.91852578,
+            "longitude": -75.08391859,
+            "route_mile": 66.186296,
+            "estimated_detour_miles": 1.718448,
+            "price_per_gallon": 3.079,
+            "gallons_purchased": 6.704552,
+            "fuel_cost": 20.643316,
+            "fuel_on_arrival_gallons": 43.295448,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 6487,
+            "external_id": "72782",
+            "name": "SHEETZ #791",
+            "latitude": 41.1098,
+            "longitude": -80.8864,
+            "route_mile": 402.024211,
+            "estimated_detour_miles": 5.652358,
+            "price_per_gallon": 3.06566666,
+            "gallons_purchased": 23.083403,
+            "fuel_cost": 70.766018,
+            "fuel_on_arrival_gallons": 16.047668,
+            "fuel_on_departure_gallons": 39.131071
+          }
+        ],
+        "diagnostics": {
+          "strategy": "next_cheaper_detour_adjusted",
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      },
+      "dijkstra": {
+        "http_status": 200,
+        "elapsed_seconds": 1.48,
+        "summary": {
+          "base_distance_miles": 790.508741,
+          "estimated_detour_miles": 5.652358,
+          "estimated_total_distance_miles": 796.1611,
+          "total_gallons_purchased": 30.0,
+          "total_fuel_cost": 91.97,
+          "remaining_fuel_gallons": 0.38389,
+          "fuel_stop_count": 1
+        },
+        "candidate_count": 64,
+        "algorithm_execution_time_ms": 11.769,
+        "stops": [
+          {
+            "location_id": 6487,
+            "external_id": "72782",
+            "name": "SHEETZ #791",
+            "latitude": 41.1098,
+            "longitude": -80.8864,
+            "route_mile": 402.024211,
+            "estimated_detour_miles": 5.652358,
+            "price_per_gallon": 3.06566666,
+            "gallons_purchased": 30.0,
+            "fuel_cost": 91.97,
+            "fuel_on_arrival_gallons": 9.514961,
+            "fuel_on_departure_gallons": 39.514961
+          }
+        ],
+        "diagnostics": {
+          "states_discovered": 2637,
+          "states_expanded": 2592,
+          "distance_updates": 4064,
+          "heap_stale_pops": 1398,
+          "fuel_step_gallons": 0.5,
+          "discrete_objective_cost": "91.969999800",
+          "discrete_remaining_fuel_gallons": 0.0,
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      }
+    }
+  },
+  {
+    "id": "3",
+    "title": "Chicago \u2192 Dallas",
+    "focus": "Price comparison over a longer trip",
+    "request": {
+      "origin": {
+        "latitude": 41.8781,
+        "longitude": -87.6298
+      },
+      "destination": {
+        "latitude": 32.7767,
+        "longitude": -96.797
+      },
+      "corridor_miles": 5,
+      "detour_multiplier": 1.4
+    },
+    "results": {
+      "greedy": {
+        "http_status": 200,
+        "elapsed_seconds": 1.49,
+        "summary": {
+          "base_distance_miles": 966.901794,
+          "estimated_detour_miles": 1.278978,
+          "estimated_total_distance_miles": 968.180772,
+          "total_gallons_purchased": 46.818077,
+          "total_fuel_cost": 137.27538,
+          "remaining_fuel_gallons": 0.0,
+          "fuel_stop_count": 2
+        },
+        "candidate_count": 78,
+        "algorithm_execution_time_ms": 0.771,
+        "stops": [
+          {
+            "location_id": 2891,
+            "external_id": "66643",
+            "name": "DEERFIELD TRAVEL CENTER",
+            "latitude": 36.092512924336,
+            "longitude": -89.801543713459,
+            "route_mile": 450.536501,
+            "estimated_detour_miles": 0.976857,
+            "price_per_gallon": 2.97566666,
+            "gallons_purchased": 29.581926,
+            "fuel_cost": 88.025951,
+            "fuel_on_arrival_gallons": 4.897507,
+            "fuel_on_departure_gallons": 34.479433
+          },
+          {
+            "location_id": 6346,
+            "external_id": "72594",
+            "name": "Quiktrip #7900",
+            "latitude": 33.45571866573548,
+            "longitude": -94.13008932578457,
+            "route_mile": 794.691344,
+            "estimated_detour_miles": 0.302121,
+            "price_per_gallon": 2.85733333,
+            "gallons_purchased": 17.236151,
+            "fuel_cost": 49.249429,
+            "fuel_on_arrival_gallons": 0.0,
+            "fuel_on_departure_gallons": 17.236151
+          }
+        ],
+        "diagnostics": {
+          "strategy": "next_cheaper_detour_adjusted",
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      },
+      "dijkstra": {
+        "http_status": 200,
+        "elapsed_seconds": 1.52,
+        "summary": {
+          "base_distance_miles": 966.901794,
+          "estimated_detour_miles": 1.278978,
+          "estimated_total_distance_miles": 968.180772,
+          "total_gallons_purchased": 47.5,
+          "total_fuel_cost": 139.273333,
+          "remaining_fuel_gallons": 0.681923,
+          "fuel_stop_count": 2
+        },
+        "candidate_count": 78,
+        "algorithm_execution_time_ms": 20.276,
+        "stops": [
+          {
+            "location_id": 2891,
+            "external_id": "66643",
+            "name": "DEERFIELD TRAVEL CENTER",
+            "latitude": 36.092512924336,
+            "longitude": -89.801543713459,
+            "route_mile": 450.536501,
+            "estimated_detour_miles": 0.976857,
+            "price_per_gallon": 2.97566666,
+            "gallons_purchased": 30.0,
+            "fuel_cost": 89.27,
+            "fuel_on_arrival_gallons": 4.897507,
+            "fuel_on_departure_gallons": 34.897507
+          },
+          {
+            "location_id": 6346,
+            "external_id": "72594",
+            "name": "Quiktrip #7900",
+            "latitude": 33.45571866573548,
+            "longitude": -94.13008932578457,
+            "route_mile": 794.691344,
+            "estimated_detour_miles": 0.302121,
+            "price_per_gallon": 2.85733333,
+            "gallons_purchased": 17.5,
+            "fuel_cost": 50.003333,
+            "fuel_on_arrival_gallons": 0.418074,
+            "fuel_on_departure_gallons": 17.918074
+          }
+        ],
+        "diagnostics": {
+          "states_discovered": 4612,
+          "states_expanded": 4581,
+          "distance_updates": 6859,
+          "heap_stale_pops": 2239,
+          "fuel_step_gallons": 0.5,
+          "discrete_objective_cost": "139.273333075",
+          "discrete_remaining_fuel_gallons": 0.0,
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      }
+    }
+  },
+  {
+    "id": "4",
+    "title": "Dallas \u2192 Los Angeles",
+    "focus": "Long trip with multiple fuel stops",
+    "request": {
+      "origin": {
+        "latitude": 32.7767,
+        "longitude": -96.797
+      },
+      "destination": {
+        "latitude": 34.0522,
+        "longitude": -118.2437
+      },
+      "corridor_miles": 5,
+      "detour_multiplier": 1.4
+    },
+    "results": {
+      "greedy": {
+        "http_status": 200,
+        "elapsed_seconds": 1.7,
+        "summary": {
+          "base_distance_miles": 1437.75936,
+          "estimated_detour_miles": 3.041252,
+          "estimated_total_distance_miles": 1440.800612,
+          "total_gallons_purchased": 94.080061,
+          "total_fuel_cost": 277.678382,
+          "remaining_fuel_gallons": 0.0,
+          "fuel_stop_count": 5
+        },
+        "candidate_count": 70,
+        "algorithm_execution_time_ms": 0.494,
+        "stops": [
+          {
+            "location_id": 6576,
+            "external_id": "72907",
+            "name": "QUIKTRIP #7913",
+            "latitude": 31.576532501400678,
+            "longitude": -102.89267541311676,
+            "route_mile": 387.849778,
+            "estimated_detour_miles": 0.295488,
+            "price_per_gallon": 2.859,
+            "gallons_purchased": 38.799752,
+            "fuel_cost": 110.928492,
+            "fuel_on_arrival_gallons": 11.200248,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 315,
+            "external_id": "2084",
+            "name": "Main Street Market #112",
+            "latitude": 31.5601565,
+            "longitude": -102.9963565,
+            "route_mile": 394.205171,
+            "estimated_detour_miles": 0.203568,
+            "price_per_gallon": 2.879,
+            "gallons_purchased": 0.660492,
+            "fuel_cost": 1.901557,
+            "fuel_on_arrival_gallons": 49.339508,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 1002,
+            "external_id": "7230",
+            "name": "DEMING TRUCK STOP",
+            "latitude": 32.26562403,
+            "longitude": -107.77441889,
+            "route_mile": 737.495255,
+            "estimated_detour_miles": 0.632837,
+            "price_per_gallon": 2.899,
+            "gallons_purchased": 34.370829,
+            "fuel_cost": 99.641032,
+            "fuel_on_arrival_gallons": 15.629171,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 4514,
+            "external_id": "69995",
+            "name": "PILOT EXPRESS #1178",
+            "latitude": 32.084178,
+            "longitude": -110.8033245,
+            "route_mile": 937.435323,
+            "estimated_detour_miles": 0.595712,
+            "price_per_gallon": 3.219,
+            "gallons_purchased": 20.055434,
+            "fuel_cost": 64.558443,
+            "fuel_on_arrival_gallons": 29.944566,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 5542,
+            "external_id": "71411",
+            "name": "Flyers #3214",
+            "latitude": 33.3069374,
+            "longitude": -111.9639314,
+            "route_mile": 1050.219581,
+            "estimated_detour_miles": 1.313648,
+            "price_per_gallon": 3.35233333,
+            "gallons_purchased": 0.193554,
+            "fuel_cost": 0.648858,
+            "fuel_on_arrival_gallons": 38.626106,
+            "fuel_on_departure_gallons": 38.81966
+          }
+        ],
+        "diagnostics": {
+          "strategy": "next_cheaper_detour_adjusted",
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      },
+      "dijkstra": {
+        "http_status": 200,
+        "elapsed_seconds": 1.71,
+        "summary": {
+          "base_distance_miles": 1437.75936,
+          "estimated_detour_miles": 2.745764,
+          "estimated_total_distance_miles": 1440.505125,
+          "total_gallons_purchased": 94.356958,
+          "total_fuel_cost": 279.396614,
+          "remaining_fuel_gallons": 0.306446,
+          "fuel_stop_count": 4
+        },
+        "candidate_count": 70,
+        "algorithm_execution_time_ms": 19.004,
+        "stops": [
+          {
+            "location_id": 315,
+            "external_id": "2084",
+            "name": "Main Street Market #112",
+            "latitude": 31.5601565,
+            "longitude": -102.9963565,
+            "route_mile": 394.205171,
+            "estimated_detour_miles": 0.203568,
+            "price_per_gallon": 2.879,
+            "gallons_purchased": 39.430695,
+            "fuel_cost": 113.520972,
+            "fuel_on_arrival_gallons": 10.569305,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 1002,
+            "external_id": "7230",
+            "name": "DEMING TRUCK STOP",
+            "latitude": 32.26562403,
+            "longitude": -107.77441889,
+            "route_mile": 737.495255,
+            "estimated_detour_miles": 0.632837,
+            "price_per_gallon": 2.899,
+            "gallons_purchased": 34.370829,
+            "fuel_cost": 99.641032,
+            "fuel_on_arrival_gallons": 15.629171,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 4514,
+            "external_id": "69995",
+            "name": "PILOT EXPRESS #1178",
+            "latitude": 32.084178,
+            "longitude": -110.8033245,
+            "route_mile": 937.435323,
+            "estimated_detour_miles": 0.595712,
+            "price_per_gallon": 3.219,
+            "gallons_purchased": 20.055434,
+            "fuel_cost": 64.558443,
+            "fuel_on_arrival_gallons": 29.944566,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 5542,
+            "external_id": "71411",
+            "name": "Flyers #3214",
+            "latitude": 33.3069374,
+            "longitude": -111.9639314,
+            "route_mile": 1050.219581,
+            "estimated_detour_miles": 1.313648,
+            "price_per_gallon": 3.35233333,
+            "gallons_purchased": 0.5,
+            "fuel_cost": 1.676167,
+            "fuel_on_arrival_gallons": 38.626106,
+            "fuel_on_departure_gallons": 39.126106
+          }
+        ],
+        "diagnostics": {
+          "states_discovered": 5336,
+          "states_expanded": 5318,
+          "distance_updates": 8982,
+          "heap_stale_pops": 3638,
+          "fuel_step_gallons": 0.5,
+          "discrete_objective_cost": "281.401666665",
+          "discrete_remaining_fuel_gallons": 0.0,
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.643042
+        }
+      }
+    }
+  },
+  {
+    "id": "5",
+    "title": "Dallas \u2192 Denver",
+    "focus": "Higher detour penalty",
+    "request": {
+      "origin": {
+        "latitude": 32.7767,
+        "longitude": -96.797
+      },
+      "destination": {
+        "latitude": 39.7392,
+        "longitude": -104.9903
+      },
+      "corridor_miles": 10,
+      "detour_multiplier": 3
+    },
+    "results": {
+      "greedy": {
+        "http_status": 200,
+        "elapsed_seconds": 1.51,
+        "summary": {
+          "base_distance_miles": 795.049349,
+          "estimated_detour_miles": 1.253717,
+          "estimated_total_distance_miles": 796.303066,
+          "total_gallons_purchased": 29.630307,
+          "total_fuel_cost": 85.513798,
+          "remaining_fuel_gallons": 0.0,
+          "fuel_stop_count": 5
+        },
+        "candidate_count": 44,
+        "algorithm_execution_time_ms": 0.299,
+        "stops": [
+          {
+            "location_id": 5914,
+            "external_id": "71936",
+            "name": "QUIKTRIP #7907",
+            "latitude": 33.92737177,
+            "longitude": -98.51274497,
+            "route_mile": 141.698021,
+            "estimated_detour_miles": 0.414022,
+            "price_per_gallon": 2.859,
+            "gallons_purchased": 14.190503,
+            "fuel_cost": 40.570649,
+            "fuel_on_arrival_gallons": 35.809497,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 4672,
+            "external_id": "70245",
+            "name": "YESWAY #1168",
+            "latitude": 33.965096,
+            "longitude": -98.672872,
+            "route_mile": 151.740575,
+            "estimated_detour_miles": 0.31463,
+            "price_per_gallon": 2.889,
+            "gallons_purchased": 1.040688,
+            "fuel_cost": 3.006548,
+            "fuel_on_arrival_gallons": 48.959312,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 2511,
+            "external_id": "65659",
+            "name": "ALLSUPS CONVENIENCE STORE #2169",
+            "latitude": 34.256357,
+            "longitude": -99.509987,
+            "route_mile": 205.567171,
+            "estimated_detour_miles": 0.198034,
+            "price_per_gallon": 2.89566666,
+            "gallons_purchased": 5.408293,
+            "fuel_cost": 15.660613,
+            "fuel_on_arrival_gallons": 44.591707,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 3448,
+            "external_id": "67762",
+            "name": "CEFCO #2008",
+            "latitude": 34.435264,
+            "longitude": -100.226604,
+            "route_mile": 248.961828,
+            "estimated_detour_miles": 0.208652,
+            "price_per_gallon": 2.91566666,
+            "gallons_purchased": 4.3598,
+            "fuel_cost": 12.711723,
+            "fuel_on_arrival_gallons": 45.6402,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 4876,
+            "external_id": "70546",
+            "name": "ALLSUPS CONVENIENCE STORE #2370",
+            "latitude": 34.941749,
+            "longitude": -100.896424,
+            "route_mile": 305.215075,
+            "estimated_detour_miles": 0.118379,
+            "price_per_gallon": 2.929,
+            "gallons_purchased": 4.631023,
+            "fuel_cost": 13.564265,
+            "fuel_on_arrival_gallons": 44.358324,
+            "fuel_on_departure_gallons": 48.989346
+          }
+        ],
+        "diagnostics": {
+          "strategy": "next_cheaper_detour_adjusted",
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.0
+        }
+      },
+      "dijkstra": {
+        "http_status": 200,
+        "elapsed_seconds": 1.64,
+        "summary": {
+          "base_distance_miles": 795.049349,
+          "estimated_detour_miles": 0.730435,
+          "estimated_total_distance_miles": 795.779784,
+          "total_gallons_purchased": 29.608021,
+          "total_fuel_cost": 85.514641,
+          "remaining_fuel_gallons": 0.030043,
+          "fuel_stop_count": 3
+        },
+        "candidate_count": 44,
+        "algorithm_execution_time_ms": 8.907,
+        "stops": [
+          {
+            "location_id": 5914,
+            "external_id": "71936",
+            "name": "QUIKTRIP #7907",
+            "latitude": 33.92737177,
+            "longitude": -98.51274497,
+            "route_mile": 141.698021,
+            "estimated_detour_miles": 0.414022,
+            "price_per_gallon": 2.859,
+            "gallons_purchased": 14.190503,
+            "fuel_cost": 40.570649,
+            "fuel_on_arrival_gallons": 35.809497,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 2511,
+            "external_id": "65659",
+            "name": "ALLSUPS CONVENIENCE STORE #2169",
+            "latitude": 34.256357,
+            "longitude": -99.509987,
+            "route_mile": 205.567171,
+            "estimated_detour_miles": 0.198034,
+            "price_per_gallon": 2.89566666,
+            "gallons_purchased": 6.417518,
+            "fuel_cost": 18.582992,
+            "fuel_on_arrival_gallons": 43.582482,
+            "fuel_on_departure_gallons": 50.0
+          },
+          {
+            "location_id": 4876,
+            "external_id": "70546",
+            "name": "ALLSUPS CONVENIENCE STORE #2370",
+            "latitude": 34.941749,
+            "longitude": -100.896424,
+            "route_mile": 305.215075,
+            "estimated_detour_miles": 0.118379,
+            "price_per_gallon": 2.929,
+            "gallons_purchased": 9.0,
+            "fuel_cost": 26.361,
+            "fuel_on_arrival_gallons": 40.019389,
+            "fuel_on_departure_gallons": 49.019389
+          }
+        ],
+        "diagnostics": {
+          "states_discovered": 2888,
+          "states_expanded": 2871,
+          "distance_updates": 3653,
+          "heap_stale_pops": 752,
+          "fuel_step_gallons": 0.5,
+          "discrete_objective_cost": "86.638333290",
+          "discrete_remaining_fuel_gallons": 0.0,
+          "routing_api_calls": 1,
+          "physical_purchase_reduction_gallons": 0.391979
+        }
+      }
+    }
+  },
+  {
+    "id": "6",
+    "title": "Anchorage \u2192 Seattle",
+    "focus": "Sparse-station/unreachable handling",
+    "request": {
+      "origin": {
+        "latitude": 61.2181,
+        "longitude": -149.9003
+      },
+      "destination": {
+        "latitude": 47.6062,
+        "longitude": -122.3321
+      },
+      "corridor_miles": 5,
+      "detour_multiplier": 1.4
+    },
+    "results": {
+      "greedy": {
+        "http_status": 422,
+        "elapsed_seconds": 2.03,
+        "error": {
+          "code": "unreachable_route",
+          "message": "No forward station sequence is reachable with a 50-gallon tank"
+        }
+      },
+      "dijkstra": {
+        "http_status": 422,
+        "elapsed_seconds": 2.04,
+        "error": {
+          "code": "unreachable_route",
+          "message": "No forward station sequence is reachable with a 50-gallon tank"
+        }
+      }
+    }
+  }
+]

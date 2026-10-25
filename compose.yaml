@@ -1,7 +1,10 @@
 name: truckroute
 services:
   postgres:
-    image: postgres:17-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    image: truckroute-postgres:17-postgis
     container_name: truckroute-postgres
     restart: unless-stopped
     environment:

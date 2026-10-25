@@ -1,0 +1,25 @@
+# Native-architecture PostgreSQL 17 with only the PostGIS core needed for corridor queries.
+FROM postgres:17-alpine3.24
+
+ARG POSTGIS_VERSION=3.6.4
+ARG POSTGIS_SHA256=4f80e1a4d227f088ae818f79180debd5894c075615823e0f556f73479cf1f200
+
+RUN set -eux; \
+    apk add --no-cache geos proj libxml2 json-c; \
+    apk add --no-cache --virtual .postgis-build \
+      build-base autoconf automake libtool gettext-dev geos-dev proj-dev \
+      libxml2-dev json-c-dev perl pkgconf wget; \
+    wget -O /tmp/postgis.tar.gz "https://github.com/postgis/postgis/archive/${POSTGIS_VERSION}.tar.gz"; \
+    echo "${POSTGIS_SHA256}  /tmp/postgis.tar.gz" | sha256sum -c -; \
+    mkdir /tmp/postgis; \
+    tar -xzf /tmp/postgis.tar.gz --strip-components=1 -C /tmp/postgis; \
+    cd /tmp/postgis; \
+    ./autogen.sh; \
+    ./configure --with-pgconfig=/usr/local/bin/pg_config \
+      --without-raster --without-topology --without-protobuf \
+      --without-sfcgal --without-address-standardizer; \
+    make -j2 with_llvm=no; \
+    make install with_llvm=no; \
+    cd /; \
+    rm -rf /tmp/postgis /tmp/postgis.tar.gz; \
+    apk del .postgis-build

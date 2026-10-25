@@ -8,7 +8,7 @@ load_dotenv(BASE_DIR / ".env", override=False)
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-development-only-change-before-deployment")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-INSTALLED_APPS = ["django.contrib.contenttypes", "geocoding"]
+INSTALLED_APPS = ["django.contrib.contenttypes", "geocoding", "fuel_optimization"]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -37,3 +37,15 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_TZ = True
 TIME_ZONE = "UTC"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 100_000
+
+# One OSRM route call per optimization. No station routing/table/matrix requests.
+FUEL_OSRM_BASE_URL = os.getenv("FUEL_OSRM_BASE_URL", "https://router.project-osrm.org")
+FUEL_OSRM_TIMEOUT = float(os.getenv("FUEL_OSRM_TIMEOUT", "15"))
+FUEL_OSRM_MAX_RESPONSE_BYTES = 8_000_000
+FUEL_MAX_ROUTE_POINTS = 100_000
+FUEL_CORRIDOR_MILES = float(os.getenv("FUEL_CORRIDOR_MILES", "5"))
+FUEL_DETOUR_MULTIPLIER = float(os.getenv("FUEL_DETOUR_MULTIPLIER", "1.4"))
+FUEL_MAX_CANDIDATES = int(os.getenv("FUEL_MAX_CANDIDATES", "1000"))
+FUEL_MAX_SEARCH_STATES = int(
+    os.getenv("FUEL_MAX_SEARCH_STATES", os.getenv("FUEL_MAX_SEARCH_LABELS", "250000"))
+)

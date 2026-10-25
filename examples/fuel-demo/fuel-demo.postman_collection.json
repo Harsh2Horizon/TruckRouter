@@ -1,0 +1,328 @@
+{
+  "info": {
+    "name": "Truckroute \u2014 6 fuel optimization demos",
+    "description": "Six checked examples, each with greedy and Dijkstra requests. Run the Django server on baseUrl. Results depend on the current station data and OSRM route.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. New York \u2192 Boston",
+      "description": "Zero-refuel trip",
+      "item": [
+        {
+          "name": "Greedy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 40.7128,\n    \"longitude\": -74.006\n  },\n  \"destination\": {\n    \"latitude\": 42.3601,\n    \"longitude\": -71.0589\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/greedy/",
+            "description": "Zero-refuel trip"
+          }
+        },
+        {
+          "name": "Dijkstra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 40.7128,\n    \"longitude\": -74.006\n  },\n  \"destination\": {\n    \"latitude\": 42.3601,\n    \"longitude\": -71.0589\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/dijkstra/",
+            "description": "Zero-refuel trip"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. New York \u2192 Chicago",
+      "description": "Single-stop versus multi-stop choices",
+      "item": [
+        {
+          "name": "Greedy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 40.7128,\n    \"longitude\": -74.006\n  },\n  \"destination\": {\n    \"latitude\": 41.8781,\n    \"longitude\": -87.6298\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/greedy/",
+            "description": "Single-stop versus multi-stop choices"
+          }
+        },
+        {
+          "name": "Dijkstra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 40.7128,\n    \"longitude\": -74.006\n  },\n  \"destination\": {\n    \"latitude\": 41.8781,\n    \"longitude\": -87.6298\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/dijkstra/",
+            "description": "Single-stop versus multi-stop choices"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Chicago \u2192 Dallas",
+      "description": "Price comparison over a longer trip",
+      "item": [
+        {
+          "name": "Greedy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 41.8781,\n    \"longitude\": -87.6298\n  },\n  \"destination\": {\n    \"latitude\": 32.7767,\n    \"longitude\": -96.797\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/greedy/",
+            "description": "Price comparison over a longer trip"
+          }
+        },
+        {
+          "name": "Dijkstra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 41.8781,\n    \"longitude\": -87.6298\n  },\n  \"destination\": {\n    \"latitude\": 32.7767,\n    \"longitude\": -96.797\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/dijkstra/",
+            "description": "Price comparison over a longer trip"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Dallas \u2192 Los Angeles",
+      "description": "Long trip with multiple fuel stops",
+      "item": [
+        {
+          "name": "Greedy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 32.7767,\n    \"longitude\": -96.797\n  },\n  \"destination\": {\n    \"latitude\": 34.0522,\n    \"longitude\": -118.2437\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/greedy/",
+            "description": "Long trip with multiple fuel stops"
+          }
+        },
+        {
+          "name": "Dijkstra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 32.7767,\n    \"longitude\": -96.797\n  },\n  \"destination\": {\n    \"latitude\": 34.0522,\n    \"longitude\": -118.2437\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/dijkstra/",
+            "description": "Long trip with multiple fuel stops"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Dallas \u2192 Denver",
+      "description": "Higher detour penalty",
+      "item": [
+        {
+          "name": "Greedy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 32.7767,\n    \"longitude\": -96.797\n  },\n  \"destination\": {\n    \"latitude\": 39.7392,\n    \"longitude\": -104.9903\n  },\n  \"corridor_miles\": 10,\n  \"detour_multiplier\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/greedy/",
+            "description": "Higher detour penalty"
+          }
+        },
+        {
+          "name": "Dijkstra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 32.7767,\n    \"longitude\": -96.797\n  },\n  \"destination\": {\n    \"latitude\": 39.7392,\n    \"longitude\": -104.9903\n  },\n  \"corridor_miles\": 10,\n  \"detour_multiplier\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/dijkstra/",
+            "description": "Higher detour penalty"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Anchorage \u2192 Seattle",
+      "description": "Sparse-station/unreachable handling",
+      "item": [
+        {
+          "name": "Greedy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 61.2181,\n    \"longitude\": -149.9003\n  },\n  \"destination\": {\n    \"latitude\": 47.6062,\n    \"longitude\": -122.3321\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/greedy/",
+            "description": "Sparse-station/unreachable handling"
+          }
+        },
+        {
+          "name": "Dijkstra",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origin\": {\n    \"latitude\": 61.2181,\n    \"longitude\": -149.9003\n  },\n  \"destination\": {\n    \"latitude\": 47.6062,\n    \"longitude\": -122.3321\n  },\n  \"corridor_miles\": 5,\n  \"detour_multiplier\": 1.4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/fuel/dijkstra/",
+            "description": "Sparse-station/unreachable handling"
+          }
+        }
+      ]
+    }
+  ]
+}

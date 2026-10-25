@@ -1,0 +1,12 @@
+{
+  "origin": {
+    "latitude": 32.7767,
+    "longitude": -96.797
+  },
+  "destination": {
+    "latitude": 34.0522,
+    "longitude": -118.2437
+  },
+  "corridor_miles": 5,
+  "detour_multiplier": 1.4
+}

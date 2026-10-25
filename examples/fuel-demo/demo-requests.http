@@ -1,0 +1,105 @@
+@baseUrl = http://127.0.0.1:8000
+@algorithm = greedy
+
+### 1. New York → Boston — Zero-refuel trip
+POST {{baseUrl}}/api/fuel/{{algorithm}}/
+Content-Type: application/json
+
+{
+  "origin": {
+    "latitude": 40.7128,
+    "longitude": -74.006
+  },
+  "destination": {
+    "latitude": 42.3601,
+    "longitude": -71.0589
+  },
+  "corridor_miles": 5,
+  "detour_multiplier": 1.4
+}
+
+### 2. New York → Chicago — Single-stop versus multi-stop choices
+POST {{baseUrl}}/api/fuel/{{algorithm}}/
+Content-Type: application/json
+
+{
+  "origin": {
+    "latitude": 40.7128,
+    "longitude": -74.006
+  },
+  "destination": {
+    "latitude": 41.8781,
+    "longitude": -87.6298
+  },
+  "corridor_miles": 5,
+  "detour_multiplier": 1.4
+}
+
+### 3. Chicago → Dallas — Price comparison over a longer trip
+POST {{baseUrl}}/api/fuel/{{algorithm}}/
+Content-Type: application/json
+
+{
+  "origin": {
+    "latitude": 41.8781,
+    "longitude": -87.6298
+  },
+  "destination": {
+    "latitude": 32.7767,
+    "longitude": -96.797
+  },
+  "corridor_miles": 5,
+  "detour_multiplier": 1.4
+}
+
+### 4. Dallas → Los Angeles — Long trip with multiple fuel stops
+POST {{baseUrl}}/api/fuel/{{algorithm}}/
+Content-Type: application/json
+
+{
+  "origin": {
+    "latitude": 32.7767,
+    "longitude": -96.797
+  },
+  "destination": {
+    "latitude": 34.0522,
+    "longitude": -118.2437
+  },
+  "corridor_miles": 5,
+  "detour_multiplier": 1.4
+}
+
+### 5. Dallas → Denver — Higher detour penalty
+POST {{baseUrl}}/api/fuel/{{algorithm}}/
+Content-Type: application/json
+
+{
+  "origin": {
+    "latitude": 32.7767,
+    "longitude": -96.797
+  },
+  "destination": {
+    "latitude": 39.7392,
+    "longitude": -104.9903
+  },
+  "corridor_miles": 10,
+  "detour_multiplier": 3
+}
+
+### 6. Anchorage → Seattle — Sparse-station/unreachable handling
+POST {{baseUrl}}/api/fuel/{{algorithm}}/
+Content-Type: application/json
+
+{
+  "origin": {
+    "latitude": 61.2181,
+    "longitude": -149.9003
+  },
+  "destination": {
+    "latitude": 47.6062,
+    "longitude": -122.3321
+  },
+  "corridor_miles": 5,
+  "detour_multiplier": 1.4
+}
+

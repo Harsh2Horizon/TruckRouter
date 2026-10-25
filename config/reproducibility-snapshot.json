@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "snapshot_date": "2026-10-25",
+  "branch": "refactor/latest-geocoding-clean",
+  "url": "https://github.com/Harsh2Horizon/TruckRouter/releases/download/data-snapshot-2026-10-25/truckrouter-data-2026-10-25.tar.gz",
+  "bytes": 521529484,
+  "sha256": "4bd17653038032b45bc885bb65cca9879e7236397dcbe9a33ab70629ef7ca06a",
+  "database_counts": {
+    "geocoding_fuellocation": 6738,
+    "geocoding_fuelobservation": 8151,
+    "geocoding_sourceplace": 416255
+  },
+  "source_releases": {
+    "alltheplaces": "2026-10-10-13-32-41",
+    "overture": "2026-10-21.0",
+    "osm": "2026-10-23;2026-10-20T20:23:47Z"
+  }
+}

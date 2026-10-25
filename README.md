@@ -1,8 +1,10 @@
 # Truckroute geocoding pipeline
 
-This branch contains one supported pipeline for geocoding truck-refuelling records in the United States and Canada: parse the input, acquire three POI datasets, import them into PostgreSQL, enrich missing locality fields, retrieve and rank source candidates, and complete unresolved observations with explicit geographic approximations. Routing and fuel-cost optimisation are future work.
+This branch contains one supported pipeline for geocoding truck-refuelling records in the United States and Canada: parse the input, acquire three POI datasets, import them into PostgreSQL, enrich missing locality fields, retrieve and rank source candidates, and complete unresolved observations with explicit geographic approximations. The independent greedy and Dijkstra fuel-purchase APIs are documented together in [Fuel optimization](FUEL_OPTIMIZATION.md).
 
 Matching policy: `brand-locality-3.1`. Locality enrichment: `locality-enrichment-1.0`. Geographic completion: `coverage-4.0`. Scores are explainable heuristics, not probabilities. All coordinates are WGS84 decimal degrees; external GeoJSON uses `[longitude, latitude]` and application coordinates use named `latitude`/`longitude` fields.
+
+**For reviewers:** [run the shared snapshot](#run-the-shared-snapshot) to reproduce the saved results and start both fuel APIs. The pinned data download is about **497 MiB**, instead of the original 12 GB working cache.
 
 ## 1. Input and address parsing
 
@@ -125,7 +127,7 @@ All adapters return `PlaceCandidate`: `{provider, namespace, source_id, release,
 
 ### Tables and constraints
 
-PostgreSQL 17 runs in Docker on `127.0.0.1:55432`. This implementation uses ordinary PostgreSQL scalar indexes and JSONB, with DuckDB Spatial for reference geometry; it does not require PostGIS.
+PostgreSQL 17 runs in Docker on `127.0.0.1:55432`. Geocoding uses ordinary PostgreSQL scalar indexes and JSONB, with DuckDB Spatial for reference geometry. Fuel optimization adds PostGIS core and an expression GiST index for route-corridor queries without changing the geocoding model contracts.
 
 | Table/model | Stored data and purpose |
 |---|---|
@@ -277,6 +279,27 @@ The previously delivered review CSVs remain in `outputs/truckroute-locality-enri
 
 Requirements: Python 3.12–3.14, uv, Docker, curl and network access for initial downloads. DuckDB Spatial/httpfs extensions are installed during source preparation.
 
+### Run the shared snapshot
+
+```sh
+git clone --branch refactor/latest-geocoding-clean https://github.com/Harsh2Horizon/TruckRouter.git
+cd TruckRouter
+bash scripts/reproduce_snapshot.sh
+.venv/bin/python manage.py runserver 127.0.0.1:8000
+```
+
+The script installs locked dependencies, downloads and checks the [pinned data release](https://github.com/Harsh2Horizon/TruckRouter/releases/tag/data-snapshot-2026-10-25), builds PostgreSQL 17/PostGIS, applies migrations, and restores **6,738 locations, 8,151 observations and 416,255 source POIs** into empty core tables. It then reruns matching and geographic completion and compares the generated CSVs with the frozen expected outputs. Original observations, all three filtered source exports, prepared spatial references and source attribution are included. Large raw Parquet containers, old run history, `.env` and credentials are excluded.
+
+Outputs are `output/reproduced/poi/source-comparison.csv`, `output/reproduced/final/all-records-geocoded.csv` and `output/reproduced/snapshot-verification.json`. Expected final coverage is **8,151/8,151 rows with coordinates**. A fresh-checkout/empty-database replay was verified against 6,738 stop rows, 20,214 source comparisons and 8,151 final observations with zero differences; the full suite passes 153 tests. The snapshot contains already-enriched canonical POIs; replay does not repeat the locality backfill or call live Census geocoding. Prepared locality polygons and raw filtered source files are also included for further analysis.
+
+The release URL, byte size and SHA256 are pinned in `config/reproducibility-snapshot.json`; extracted files have individual checksums. Existing different data files are preserved, and database restore refuses nonempty core tables unless they were already restored by this script. Use a fresh checkout/database for replay. DuckDB extensions are installed for the recipient's OS/architecture; OSRM network access is needed only when calling the fuel APIs.
+
+The comparison ignores generated run UUIDs and tolerates floating-point differences of `1e-7` absolute / `1e-9` relative; other field values and row counts must match. This is a dated snapshot, not a promise that downloading newer upstream releases gives identical results.
+
+Import `examples/fuel-demo/fuel-demo.postman_collection.json` to try all six recorded scenarios through both fuel endpoints. Individual JSON bodies and `demo-requests.http` are included beside it. Configure database ports/credentials and OSRM in `.env` when necessary; `.env.example` is for local development.
+
+### Acquire new upstream data
+
 ```sh
 # Preserve an existing .env; .env.example contains the local development DB settings.
 test -f .env || cp .env.example .env
@@ -288,7 +311,7 @@ bash scripts/run_pipeline.sh fuel-prices-for-be-assessment.csv output/run-202610
 
 The single shell entry point starts PostgreSQL, installs locked dependencies, applies migrations and calls the explicit Django stages. Every source import replaces that source's canonical rows, so enrichment runs after import and before matching. Completed reference caches are reused. For changed input regions/snapshots, refresh the geographic reference with the new acquisition report; do not assume an old settlement extract covers newly added regions. The script refuses a run directory with an existing locality audit.
 
-For a rescore of the currently enriched database, without imports or downloads:
+For the pinned snapshot and a fresh-machine replay, see [Run the shared snapshot](#run-the-shared-snapshot). For a rescore of the existing development database, without imports or downloads:
 
 ```sh
 .venv/bin/python manage.py run_geocoding_pipeline \
@@ -321,7 +344,7 @@ API: `POST /api/v1/addresses/parse` accepts the input address object; `POST /api
 | `pipeline.py`, `completion.py`, `exports.py` | Stage orchestration, raw-observation completion and export projections. |
 | `management/commands/`, `views.py` | CLI and HTTP entry points. |
 
-Historical scoring/download implementations, live geocoding adapters, old comparison/workbook scripts and superseded documents have been removed. Django migrations remain because the existing database depends on their history. This README is the single maintained project document. The pre-refactor implementation and documents are recoverable from checkpoint commit `ac80c7b`.
+Historical scoring/download implementations, live geocoding adapters, old comparison/workbook scripts and superseded documents have been removed. Django migrations remain because the existing database depends on their history. This README is the geocoding reference; `FUEL_OPTIMIZATION.md` is the single reference for both fuel procedures. The pre-refactor implementation and documents are recoverable from checkpoint commit `ac80c7b`.
 
 ### Verification
 
