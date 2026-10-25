@@ -1,5 +1,7 @@
 # Canonical address and geocoding design
 
+The architecture and canonical model below describe the initial implementation. Its scoring, branch-identity and clustering sections are historical. Current behavior is documented in [the brand/locality v3 matching reference](matching-criteria-reference.md); store IDs, street identity and postcodes no longer influence matching.
+
 ## Scope and pipeline
 
 ```mermaid

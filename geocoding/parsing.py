@@ -2,11 +2,11 @@
 
 import re
 
-from .normalization import brand_key, subdivision, text_key
+from .normalization import brand_key, country_code, locality_codes, text_key
 from .schemas import AddressInput, CanonicalAddress, ExitReference, RoadNetwork, RoadReference
 
 ROAD_RE = re.compile(
-    r"\b(?P<prefix>INTERSTATE|I|U\.?S\.?|STATE\s+(?:ROUTE|HIGHWAY)|SR|ST|"
+    r"\b(?P<prefix>INTERSTATE|I|U\.?S\.?(?:\s+(?:HIGHWAY|ROUTE|HWY))?|STATE\s+(?:ROUTE|HIGHWAY|HWY)|SR|ST|"
     r"COUNTY\s+(?:ROAD|ROUTE)|CR|FM|RM|PR|TCH|HIGHWAY|HWY|LOOP)"
     r"[\s-]*(?P<number>\d+(?:[A-Z](?![A-Z]))?|[A-Z]{1,2}\b)"
     r"(?P<shared>(?:/\d+[A-Z]?)*)(?:\s*(?P<variant>BUS(?:INESS)?|ALT(?:ERNATE)?|"
@@ -17,8 +17,10 @@ EXIT_RE = re.compile(r"\bEXIT\s*(?P<identifier>\d+[A-Z]?(?:[/-]\d*[A-Z])?)\b", r
 
 
 def parse_address(data: AddressInput | dict) -> CanonicalAddress:
+    if isinstance(data, dict):
+        data = {**data, "country": country_code(data.get("country", ""))}
     data = AddressInput.model_validate(data)
-    state, country = subdivision(data.state, data.country)
+    state, country = locality_codes(data.state, data.country)
     raw_name = data.name.strip()
     brand_part, marker, store_id = raw_name.partition("#")
     # Store identifiers are strings, including leading zeroes and alphabetic suffixes.
@@ -56,10 +58,14 @@ def parse_address(data: AddressInput | dict) -> CanonicalAddress:
             "I": RoadNetwork.INTERSTATE,
             "INTERSTATE": RoadNetwork.INTERSTATE,
             "US": RoadNetwork.US_HIGHWAY,
+            "USHIGHWAY": RoadNetwork.US_HIGHWAY,
+            "USROUTE": RoadNetwork.US_HIGHWAY,
+            "USHWY": RoadNetwork.US_HIGHWAY,
             "SR": RoadNetwork.STATE,
             "ST": RoadNetwork.STATE,
             "STATEROUTE": RoadNetwork.STATE,
             "STATEHIGHWAY": RoadNetwork.STATE,
+            "STATEHWY": RoadNetwork.STATE,
             "CR": RoadNetwork.COUNTY,
             "COUNTYROAD": RoadNetwork.COUNTY,
             "COUNTYROUTE": RoadNetwork.COUNTY,

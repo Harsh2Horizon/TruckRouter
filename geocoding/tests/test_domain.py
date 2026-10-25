@@ -116,12 +116,13 @@ class MatchingTests(unittest.TestCase):
         item = candidate(name="KWIK TRIP", address="123 Main St")
         self.assertEqual(rank_candidates(address, [item])["status"], "accepted")
 
-    def test_house_number_conflict_is_not_masked_by_street_similarity(self):
+    def test_house_number_does_not_affect_brand_locality_matching(self):
         address = query(address="123 Main Street")
         item = candidate(address="125 Main Street")
         result = rank_candidates(address, [item])
-        self.assertEqual(result["status"], "unmatched")
-        self.assertIn("house_number_conflict", result["candidates"][0]["evidence"]["conflicts"])
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["score"], 100)
+        self.assertNotIn("house_number", result["candidates"][0]["evidence"]["components"])
 
     def test_exit_number_alone_is_not_evidence_across_different_highways(self):
         score = score_addresses(query(address="I-94, EXIT 143"), query(address="I-90, EXIT 143"))
@@ -131,22 +132,22 @@ class MatchingTests(unittest.TestCase):
         result = rank_candidates(query(), [candidate()])
         self.assertEqual(result["status"], "accepted")
         self.assertEqual(result["score"], 100)  # Every applicable input field is corroborated.
-        self.assertEqual(result["candidates"][0]["evidence"]["components"]["store_id"], 1)
+        self.assertEqual(result["candidates"][0]["evidence"]["components"]["name"], 1)
 
-    def test_different_store_is_hard_conflict(self):
+    def test_different_store_ids_do_not_change_score(self):
         score = score_addresses(query(), query(name="KWIK TRIP #797"))
-        self.assertEqual(score.score, 0)
-        self.assertIn("store_id_conflict", score.conflicts)
+        self.assertEqual(score.score, 100)
+        self.assertNotIn("store_id", score.components)
+        self.assertEqual(score.conflicts, [])
 
     def test_different_state_is_hard_conflict(self):
         score = score_addresses(query(), query(state="MN"))
-        self.assertIn("state_conflict", score.conflicts)
+        self.assertIn("locality_conflict", score.conflicts)
 
-    def test_missing_store_does_not_look_like_exact_branch_match(self):
+    def test_missing_store_number_does_not_penalize_name_and_locality(self):
         result = rank_candidates(query(), [candidate(name="KWIK TRIP")])
-        self.assertEqual(result["status"], "needs_review")
-        self.assertIsNone(result["coordinate"])
-        self.assertIn("insufficient_branch_or_locality_evidence", result["reasons"])
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["score"], 100)
 
     def test_same_store_far_apart_requires_review(self):
         result = rank_candidates(query(), [candidate(), candidate("two", latitude=45)])
@@ -204,7 +205,8 @@ class MatchingTests(unittest.TestCase):
     def test_missing_fields_have_no_similarity_component(self):
         score = score_addresses(query(), query(name="KWIK TRIP", address=""))
         self.assertNotIn("store_id", score.components)
-        self.assertIn("store_id", score.missing)
+        self.assertNotIn("store_id", score.missing)
+        self.assertIn("highways", score.missing)
         self.assertLess(score.coverage, 1)
 
     def test_poi_existence_confidence_is_not_a_matching_score(self):

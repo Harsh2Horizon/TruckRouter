@@ -7,3 +7,5 @@ __pycache__/
 output/*
 !output/.gitkeep
 data/
+outputs/
+node_modules

@@ -1,302 +1,258 @@
-# Truck refuelling location matching criteria
+# Matching criteria reference — brand and locality v3
 
-Implementation reference for the Django geocoding pipeline
+Current algorithm: `brand-locality-3.1`. This retains the v3 weights and gates and adds coordinate-based locality inference: polygon-derived city values can satisfy locality; nearest-settlement city estimates require review. Explicit Census legal-name aliases support city comparison. See [the locality enrichment results](locality-enrichment-results.md) for the audit, policy and current coverage. The old `evidence-2.0` rules are retained in [the v2 archive](matching-criteria-v2-archive.md). Historical v3 output counts below refer to the original `brand-locality-3.0` run.
 
-Version `evidence-2.0` | Reviewed 24 October 2026 | Scope US and Canada
+## 1. What changed
 
-This document explains how an input truck stop is matched to Overture Places, AllThePlaces and OpenStreetMap, how records from those sources are grouped as the same physical place, and how the resulting coordinates are selected. It describes the implemented Python code and the completed v2 run. The same numerical scoring policy applies to all three sources; source differences arise from their available fields, identifiers and coordinate types.
+The score uses **only business name/brand, joint city–state–country locality, highway and scoped exit evidence**. Name has the largest weight. Provider store IDs, OPIS IDs, street numbers, streets, postcodes, brand Wikidata IDs, source count and provider confidence add **zero points**. They do not break branch ties or affect candidate retrieval priority. IDs remain in the data for provenance and joining results to the original observations.
 
-The pipeline distinguishes a best available candidate from an accepted location. A source can return a coordinate while its status remains `needs_review` or `unmatched`. The highest score identifies the strongest available scored record, and does not establish that its position belongs to the requested branch. Scores are evidence heuristics from 0 to 100, not calibrated probabilities of correctness.
+The project was initialized in Git before these edits. Baseline commit: `068d7ab` (`Baseline existing geocoding pipeline before matching redesign`). Large cached datasets, generated outputs, dependencies and `.env` are ignored.
 
-## 1 The three matching operations
+## 2. Common model and source mappings
 
-| Operation | What is compared | Result |
-|---|---|---|
-| Input to each source | The canonical input address against candidate addresses from that source | Field similarities, evidence coverage, score and a source decision |
-| Record to record | Eligible candidate records against other candidates, including records from different sources | Spatial and identity clusters representing possible physical stations |
-| Source to source selection | Each source's best eligible geocoded candidate score | Highest score, source, original provider coordinate and explicit score ties |
+All three adapters produce the same `CanonicalAddress` plus a `PlaceCandidate`. Raw strings, parsed fields, WGS84 coordinates, record identity, release, precision, license and provenance remain available for auditing.
 
-Input scoring uses brand, business name, store ID, city, state, country, postcode, street, house number, highway references and scoped exits. Record clustering additionally uses the distance between provider coordinates. Input-to-source scoring does not use a distance to the input because this feed supplies textual locations rather than known input coordinates.
-
-The pipeline does not numerically compare OPIS IDs to GERS IDs, ATP feature IDs or OSM element IDs. Those identifiers belong to different namespaces. They identify and audit records; only an explicitly interpreted public store number contributes store identity evidence.
-
-## 2 Source acquisition and eligibility
-
-The current dataset contains 8,151 price observations for 6,738 distinct OPIS stops. Acquisition covers the US and Canada, with OSM files limited to the 57 states and provinces represented in the input.
-
-| Source | Current acquired scope | Stored identity | Source-specific restrictions |
+| Common field | AllThePlaces | Overture Places | OpenStreetMap |
 |---|---|---|---|
-| Overture Places | Release `2026-10-21.0`; six relevant spatial Parquet files, filtered to US/CA fuel categories or input brands | Provider `overture`, namespace `places`, place ID and release | First address only; existence confidence is separate from match confidence |
-| AllThePlaces | Published run `2026-10-10-13-32-41`; 69 selected spiders, filtered by country and fuel/input-brand relevance | Provider `alltheplaces`, spider namespace, feature ID and run | Selected-spider coverage; generic `ref` is opaque by default |
-| OpenStreetMap | GeoParquet mirror snapshot `2026-10-23`, with underlying OSM timestamp `2026-10-20T20:23:47Z` | Provider `osm`, node/way/relation namespace, element ID and snapshot | Current acquisition selects `amenity=fuel` from POI and amenity polygon themes |
+| Business name | Feature properties `name` | `names.primary` and adapter name handling | `name` tag |
+| Brand | `brand`, with parser fallback to name | `brand.names.primary`, with name fallback | `brand`, with name fallback |
+| City | `addr:city` | Address `locality` | `addr:city` |
+| State/province | `addr:state` | Address `region` | `addr:state`; extract context can establish the state |
+| Country | `addr:country` | Address `country` | `addr:country`; regional extract context can establish the country |
+| Highway/exit clues | Parse available address text | Parse available address text | Parse address and supported route/exit text |
+| Coordinates | Feature point geometry | Place point geometry | Node point or polygon centroid, with provenance |
+| Source record identity | Spider namespace plus source feature ID | Overture record ID and release | OSM element type/ID and snapshot |
 
-ATP spider discovery uses exact normalized spider names, explicit aliases and a sample of the first feature in each cached spider file. It does not claim an exhaustive inventory of every fuel-related spider. Overture's country filter uses the first address country. OSM acquisition preserves original IDs and tags, verifies published file checksums, and deduplicates border objects by element type and ID. These are acquisition rules, not additional score components.
+See [`providers.py`](../geocoding/providers.py) for exact adapter extraction and [`schemas.py`](../geocoding/schemas.py) for contracts. Not every source publishes every field. The matcher does not assume that a nearby address has the desired highway exit, and does not manufacture missing provider clues.
 
-The current OSM transport is a published mirror, rather than a fresh Overpass query. A separate Overpass loader exists. The self-hosted Nominatim adapter is optional and is outside the three-source v2 comparison.
+Overture and AllThePlaces are place datasets used as local candidate indexes; they are not interchangeable public text geocoding APIs. This batch uses the imported releases in its acquisition report. Live Nominatim and Overpass are not used by this batch.
 
-## 3 How source fields become comparable
+## 3. Name and brand normalization
 
-All adapters produce `CanonicalAddress` and `PlaceCandidate`. These contracts separate identity and address evidence from coordinates, lifecycle, provenance and licensing. The table records what the current adapters read, rather than every field an upstream dataset might support.
+For the input and every candidate, compare both the normalized brand and the normalized raw business name. The business name excludes the `#` suffix and recognized trailing `STORE`, `LOCATION` or `NO` store-number forms. Explicit store labels are parsed separately; known IDs are not inserted into the name comparison.
 
-| Canonical field | Overture Places | AllThePlaces properties | OpenStreetMap tags |
-|---|---|---|---|
-| Business name | `names.primary`; brand primary name fallback | `name`, then `brand`, then `operator` | `name`, then `brand`, then `operator` |
-| Brand | `brand.names.primary`; parsed business name fallback | `brand`; parsed name fallback | `brand`; parsed name fallback |
-| Brand Wikidata | `brand.wikidata` | `brand:wikidata` | `brand:wikidata` |
-| Store ID | Explicit marker in the selected name | `ref:store`, then `store_number`, then parsed name; verified `ref` opt-in | `ref:store`, then `store_number`, then parsed name; generic `ref` excluded |
-| Street and house number | Parse `addresses[0].freeform` | `addr:street_address`, or house number plus `addr:street`; `addr:full` fallback | Same tagged-address rules as ATP |
-| City | `addresses[0].locality` | `addr:city` | `addr:city` |
-| State or province | `addresses[0].region` | `addr:state` | `addr:state`; mirror region context can fill a blank |
-| Country | `addresses[0].country` | `addr:country`; recognized subdivision inference | `addr:country`; subdivision or acquisition-region inference |
-| Postcode | `addresses[0].postcode` | `addr:postcode` | `addr:postcode` |
-| Highways and exits | Parse selected freeform address | Parse selected address text | Parse selected address text |
-| Coordinate | Point geometry in longitude/latitude order | Point geometry in longitude/latitude order | Node latitude/longitude, or explicit center for a way/relation |
+Normalization removes accents and punctuation, normalizes case and spaces, and applies explicit brand aliases. Examples include `PILOT TRAVEL CENTER → PILOT`, `LOVES TRAVEL STOPS → LOVES`, `MAVERIK COUNTRY STORE → MAVERIK` and `KWIKTRIP → KWIK TRIP`. Generic descriptors such as `TRAVEL CENTER`, `TRUCK STOP` and `TRAVEL PLAZA` are removed from identity terms. Generic names such as `UNKNOWN`, `FUEL` or `GAS STATION` cannot establish a brand match on their own.
 
-### Overture interpretation
+For every informative input/candidate name pair:
 
-Only the first address in `addresses` is scored. Other addresses, alternate names and upstream source records remain available in the raw payload but are not expanded into separate matching alternatives. The adapter does not infer a store number from a GERS ID, phone number or source record ID.
-
-`confidence` measures whether the place exists. A value of zero makes a candidate ineligible. Other values do not multiply or increase the matching score. `operating_status` is used for lifecycle eligibility; the scorer excludes `closed`, `temporarily_closed` and `permanently_closed`. Unknown status is allowed. Category and taxonomy fields help acquisition but do not contribute score points. This distinction is consistent with the [Overture place schema](https://docs.overturemaps.org/schema/reference/places/place/).
-
-### AllThePlaces interpretation
-
-A feature must have an ID and an `@spider` namespace. The adapter retains `@source_uri` and `ref` in provenance. A generic numeric `ref` is not automatically a store number. A caller may enable `ref_is_store_id` for a source whose semantics have been verified; the normal three-source pipeline leaves that option disabled.
-
-Consequently, input store `796` can remain uncorroborated even if a spider has a numeric `ref`. This lowers available evidence and blocks automatic branch acceptance unless full street identity establishes the branch. ATP's [data format documentation](https://github.com/alltheplaces/alltheplaces/blob/master/DATA_FORMAT.md) explains its feature identity and properties; the store-number interpretation here is our adapter policy.
-
-For lifecycle, `end_date=yes` or an end date on or before the current date marks a place permanently closed. A future end date is treated as open, and an absent or unrecognized value as unknown. A null geometry is retained as an unlocated record; it cannot provide a source comparison coordinate.
-
-### OpenStreetMap interpretation
-
-OSM identity requires element type and ID. The adapter uses a node's explicit coordinates or a way/relation center. In the current mirror export, centers are calculated with `ST_Centroid`, and their derivation is retained in query context. A node is `poi` precision and a fuel way/relation center is `poi_center` precision. A non-fuel element has unknown precision and is excluded from matched-coordinate selection.
-
-The adapter can fill a missing country from the acquisition region and a missing state from mirror context when its country agrees with the address country. It records warnings for this inferred context. It does not fill a missing city, postcode or store ID from the input, and it does not perform reverse geocoding. The current tagged-address path reads `addr:city` directly; town/village fallbacks belong to the optional Nominatim adapter.
-
-The selected extraction includes active `amenity=fuel` objects. If lifecycle tags reach the adapter, `disused:amenity=fuel` or `abandoned:amenity=fuel` marks them permanently closed. Fuel types, HGV access and opening hours are retained when available but are not matching score components. See the [OSM fuel tag definition](https://wiki.openstreetmap.org/wiki/Tag:amenity=fuel) and [mirror implementation](https://github.com/gsueur/osm-geoparquet).
-
-## 4 Normalization before comparison
-
-Text keys remove accents, convert to uppercase and collapse punctuation to spaces. Brand keys also remove apostrophes and apply explicit aliases, including Pilot Travel Center to Pilot, Flying J Travel Plaza to Flying J, and Maverik Country Store to Maverik. Kwik Trip and QuikTrip have an explicit distinction and do not become the same brand.
-
-Business-name scoring removes everything after the first `#`, and recognized trailing `STORE` or `LOCATION` number tokens. This prevents an input's store number being penalized twice through the name and store fields. The raw name is retained. If an explicit brand is absent, the parser's business-prefix interpretation may serve as the brand; it is not a separately verified brand assertion.
-
-Store IDs remain strings. Comparison removes whitespace and a leading marker, uppercases letters, and normalizes purely numeric leading zeros, so `00796` and `796` compare equal. Internal punctuation in alphanumeric IDs remains significant: `AB-C` and `A-BC` differ.
-
-Recognized US/Canadian subdivisions are normalized to codes. The tagged ATP/OSM adapters also normalize country aliases such as `USA` to `US`. Street comparison standardizes common suffixes and directions, including Street/St, Road/Rd, Avenue/Ave and North/N. Postcodes are uppercased with spaces removed, then compared exactly; the current matcher does not implement ZIP-prefix equivalence.
-
-A highway key combines jurisdiction, network, number and variant. Interstate 94 differs from US Highway 94; a Wisconsin state route differs from a Minnesota route with the same number. Direction is retained but is not part of the scored highway key. `I-80/94` expands to two references. A following exit with no unique numbering highway remains unassociated and is excluded from exit scoring. Exit associations inferred from text have not been verified against a road graph.
-
-## 5 Candidate retrieval before scoring
-
-Retrieval narrows the database pool; scoring then evaluates the records that remain. These two stages use different thresholds.
-
-| Retrieval rule | Implemented behavior |
-|---|---|
-| Release scope | Use only provider/release pairs from the acquired run |
-| Country and state | If the input has a value, keep exact matches and blank source values; exclude known other values |
-| City | Keep blank source cities or city similarity at least 0.70; an exact store ID can bypass this city filter |
-| Brand | Keep blank source brands or normalized brand similarity at least 0.50 |
-| Priority | Exact store ID first; then exact city, other admitted city, blank city; then exact canonical brand; then database key |
-| Limit | Up to 500 candidates per provider, rather than 500 shared across all providers |
-| Truncation | A 501st admitted record marks that provider's search as truncated |
-
-An exact store ID does not bypass known country/state disagreement or the brand filter. The retrieval limits mean a match is the best found within the searched scope, rather than a proof that no alternative exists anywhere in the complete source dataset. A truncated provider cannot independently auto-accept; another provider with a complete search retains its own decision status. Any truncated provider blocks combined automatic acceptance.
-
-## 6 Field similarity and weights
-
-Each available field produces a similarity between zero and one. The same weights and functions apply to Overture, ATP and OSM.
-
-| Field | Weight | Field comparison |
-|---|---:|---|
-| Brand | 20% | Normalized token-sort similarity; both known Wikidata IDs override text with exact equality |
-| Business name | 10% | Token-sort similarity after store-token removal and explicit alias normalization |
-| Store ID | 22% | Exact normalized store-key equality |
-| City | 14% | Normalized token-sort similarity |
-| State or province | 7% | Exact normalized text equality |
-| Country | 3% | Exact normalized text equality |
-| Postcode | 4% | Exact normalized text equality |
-| Street | 8% | Edit similarity after street normalization |
-| House number | 3% | Exact normalized text equality |
-| Highways | 7% | Shared highway keys divided by the smaller reference-set size |
-| Scoped exits | 2% | Shared highway-key/exit-ID pairs divided by the smaller scoped set |
-
-The weights sum to 100%. A source naming one of three input access roads gets full highway-field overlap because its one known road is supported. A disjoint known highway set gets zero highway similarity. Equal exit numbers on different highways get zero exit similarity. An exit lacking a highway key does not supply comparable exit evidence.
-
-Phone, website, fuel price, fuel type, HGV access, opening hours, source age, provider reputation, category, geometry distance to the text-only input, and source existence confidence are not numerical score components. Several are useful future signals or routing inputs, but the current code does not award points for them.
-
-## 7 The aggregate score
-
-Let A be the total weight of fields present in the input and W the total weight of fields comparable on both records. Let M be the weighted mean of their field similarities. Coverage C is W divided by A. Evidence strength E is the smaller of one and W divided by 0.60.
-
-**Score equation**
-
-`S = 100 × M × sqrt(C) × E`
-
-The implementation returns zero for a zero denominator, caps the result at 100 and rounds the final score to three decimal places. It calculates with the unrounded intermediate values; the audit's M, C and E are rounded to four decimal places for display.
-
-A field absent from the input is not applicable and does not reduce coverage. A field present in the input but absent from the source is recorded as missing and reduces W. A field present on both sides but disagreeing still counts in W and contributes zero or partial similarity. Coverage therefore measures comparability, not correctness; it must be interpreted with similarity and conflicts.
-
-E prevents a few exact but weak attributes from receiving the same score as richer identity evidence. The 0.60 evidence-weight target, field weights and decision thresholds are explicit heuristic parameters. They have not been learned from a labeled validation set.
-
-### Conflicts that force zero
-
-| Conflict | Rule |
-|---|---|
-| Country | Both known and unequal |
-| State | Both known and unequal |
-| Store ID | Both known and different after store-key normalization |
-| House number | Both known and unequal after text normalization |
-| Brand | Comparable brand similarity below 0.55, including explicit Kwik Trip versus QuikTrip distinction |
-
-If both brand Wikidata IDs are known, unequal IDs produce a zero brand component and thus a brand conflict. Missing fields are not conflicts. Postcode, city, street, highway and exit disagreements reduce similarity but do not independently force the aggregate score to zero. Lifecycle and coordinate eligibility are checked separately after address scoring.
-
-## 8 Worked scoring cases
-
-These synthetic examples use the input `KWIK TRIP #796`, `I-94, EXIT 143 & US-12 & SR-21`, Tomah, WI, US. Each source candidate has a valid synthetic POI point. Results assume a single candidate, no input conflict and a complete search. The numbers were calculated by the implemented scorer; they are not claims about store 796's real coordinates.
-
-| Case | A | W | M | C | E | Score | Decision |
-|---|---:|---:|---:|---:|---:|---:|---|
-| Every applicable field matches | 0.85 | 0.85 | 1.0000 | 1.0000 | 1.0000 | 100.000 | Accepted |
-| Store and locality match; road and exit absent | 0.85 | 0.76 | 1.0000 | 0.8941 | 1.0000 | 94.558 | Accepted |
-| Brand/name/locality match; store and roads absent | 0.85 | 0.54 | 1.0000 | 0.6353 | 0.9000 | 71.735 | Review |
-| Brand/name/state/country match; store, city and roads absent | 0.85 | 0.40 | 1.0000 | 0.4706 | 0.6667 | 45.733 | Unmatched |
-| All fields match except city typo Tommah | 0.85 | 0.85 | 0.9850 | 1.0000 | 1.0000 | 98.503 | Accepted |
-| Candidate says store 797 | 0.85 | 0.85 | 0.7412 | 1.0000 | 1.0000 | 0.000 | Store conflict |
-| Candidate says state MN | 0.85 | 0.85 | 0.8902 | 1.0000 | 1.0000 | 0.000 | State conflict |
-| Candidate says I-90 Exit 143 | 0.85 | 0.85 | 0.8941 | 1.0000 | 1.0000 | 89.412 | Review |
-| Candidate names I-94 only; other identity matches | 0.85 | 0.83 | 1.0000 | 0.9765 | 1.0000 | 98.817 | Accepted |
-
-For the 71.735 case, the comparable weights are brand 0.20, name 0.10, city 0.14, state 0.07 and country 0.03, totaling W=0.54. All these similarities equal one. C=0.54/0.85 and E=0.54/0.60. A perfect similarity on those fields still lacks the requested store and road evidence, so the result remains a review candidate.
-
-The 45.733 case can still populate a source's comparison latitude/longitude as its best available eligible record. Its `unmatched` status and low score remain visible. The wrong-state case would usually be removed during retrieval before scoring; the zero score documents what happens if it reaches the scorer.
-
-## 9 How records from different sources are grouped
-
-The source pairs Overture–ATP, Overture–OSM and ATP–OSM all use the same `same_place` rules. The same rules can also group duplicate observations within a provider. There is no separate bonus or special matching formula for any pair.
-
-| Pair | Shared comparison basis | Identifier treatment |
-|---|---|---|
-| Overture and ATP | Canonical identity/address fields plus coordinate distance | GERS/place ID and ATP feature ID remain distinct; Overture lineage is retained |
-| Overture and OSM | Same canonical fields plus point/center distance | Overture ID is not equated with an OSM numeric element ID |
-| ATP and OSM | Same canonical fields plus point/center distance | Spider ID, generic ref and OSM identity are not assumed to be public branch numbers |
-
-A record first needs a query score of at least 65 and no hard conflict to enter decision clustering. Known closed and zero-existence records are excluded. Pairwise grouping then requires both records to have coordinates, distance at most 250 m, and no hard conflict between their addresses. At least one of these identity conditions must also hold:
-
-1. Both carry the same normalized store ID.
-2. Both carry the same house number and street similarity at least 0.95.
-3. Distance is at most 35 m, business-name similarity is at least 0.95, and comparable brand similarity is at least 0.90. Generic names such as Unknown, Fuel, Gas Station and Truck Stop cannot establish this name-based identity.
-
-The pairwise identity check does not require its own aggregate address score of 65. The 65 threshold applies to each candidate's match to the input before decision clustering. Missing brand evidence does not itself block the very-close name condition, but it also cannot satisfy automatic input branch acceptance's strong-brand requirement.
-
-Cluster admission checks the new record against every existing member. If A is near B and B near C but A is more than 250 m from C, all three cannot join one cluster. This prevents a chain of nearby fuel stations becoming one place.
-
-A cluster's score is its strongest member's input score. Ten duplicate records score no more than one identical record. Source lineage is retained because an Overture observation may share upstream data with ATP or OSM; three provider names do not automatically mean three independent observations.
-
-The combined coordinate is the medoid among eligible POI/POI-center members of the winning cluster: the actual member point with the smallest total distance to the others. The code does not average coordinates. Equal medoid choices follow the stable ranking order.
-
-## 10 Acceptance and review decisions
-
-Automatic acceptance requires every applicable condition below. A high score alone is insufficient.
-
-| Requirement | Threshold or condition |
-|---|---|
-| Score | At least 90 |
-| Distinct-location margin | At least 8 points above the next decision cluster |
-| Brand | Brand component at least 0.90 |
-| Branch identity | Exact known store ID, or exact known house number plus street similarity at least 0.95 |
-| Locality | City similarity at least 0.85 or exact known postcode |
-| Geographic scope | Known matching country and state on both records |
-| Position | Winning cluster contains an eligible POI or POI-center coordinate |
-| Source lifecycle | No known closure or zero existence confidence |
-| Search and input | No relevant truncation, no input disagreement, and complete combined acquisition |
-
-When there is only one decision cluster, its score is also the reported decision margin. Margin eight is a distinct-location separation rule, not eight metres. A second record in the same physical cluster is not a competing location.
-
-`accepted` fills the combined latitude/longitude. `needs_review` means there is a decision candidate, or an input disagreement, but an acceptance condition failed. `unmatched` means there is no eligible decision cluster in the searched scope; a lower scoring source comparison candidate can still exist. `unavailable` is an export label for a source that was not successfully acquired.
-
-Useful reason codes include `score_below_accept_threshold`, `competing_location_with_similar_score`, `insufficient_branch_or_locality_evidence`, `no_poi_coordinate`, `candidate_limit_reached`, `no_eligible_candidate`, `input_records_disagree` and `source_acquisition_incomplete`.
-
-An input disagreement prevents combined acceptance and downgrades otherwise accepted source decisions. Incomplete acquisition blocks combined acceptance but does not invalidate another successfully acquired source's independent decision. Two providers can each accept a branch independently yet leave the combined result under review if their high-scoring positions form different physical clusters.
-
-## 11 Reading source and highest score columns
-
-For each prefix `alltheplaces`, `overture` and `osm`, the flat comparison exposes these fields:
-
-| Column suffix | Meaning |
-|---|---|
-| `_score` | Score of that source's best eligible geocoded candidate; zero when none exists |
-| `_latitude` and `_longitude` | That same provider record's WGS84 point, including review or low-score candidates |
-| `_status` | Source-level acceptance/review/unmatched decision |
-| `_source_id` | ID of the record supplying the comparison point |
-| `_matched_name` and `_matched_address` | Source-provided business name and selected raw address |
-| `_matched_city` and `_matched_state` | Canonical locality from that candidate |
-| `_evidence_coverage` | Comparable input weight fraction C, from zero to one |
-| `_margin` | Score difference to the next eligible located candidate representing another place |
-| `_reasons` | Conditions explaining the source decision |
-
-Best-point selection requires positive score, no hard conflict, eligible POI precision, a coordinate, no known closure and nonzero-or-unknown existence confidence. It has no 65-point floor. Blank source coordinates mean there was no eligible geocoded candidate in the searched scope. An unlocated high-scoring address can affect a decision but cannot supply these coordinate columns. The JSON `decision_score` separates the decision cluster score from the best-point score when they differ.
-
-`highest_matching_score` is the maximum score among eligible source points. The associated source, source ID, latitude, longitude and status are copied from the same record. Equal maxima appear in `highest_matching_tied_sources`. The displayed source is the first alphabetically, so ATP precedes OSM and Overture in a three-way tie; this ordering does not express a quality preference.
-
-The unprefixed `score` describes the combined winning decision cluster. Unprefixed `latitude`/`longitude` are acceptance-controlled combined coordinates. `proposed_*` describes the combined cluster's proposed point. These may differ from `highest_matching_*`, which describes an individual provider record. Source-level margin compares eligible located alternatives; combined margin compares decision clusters whose members have query scores at least 65.
-
-## 12 The actual Tomah example
-
-For input OPIS ID 9, `KWIK TRIP #796` in Tomah, the completed run found exact brand/name/locality evidence but did not establish store 796 from the selected candidates. All three reported source maxima equal 71.735, and their source margins are zero.
-
-| Source | Reported candidate address | Latitude | Longitude | Score |
-|---|---|---:|---:|---:|
-| AllThePlaces | 124 W McCoy Blvd | 44.018500 | -90.506580 | 71.735 |
-| Overture | 1504 Superior Ave | 43.97228269 | -90.50389399 | 71.735 |
-| OpenStreetMap | 1504 Superior Avenue | 43.9725227 | -90.5041962 | 71.735 |
-
-These are reported candidate locations, not verified coordinates for store 796. The displayed highest source is ATP because all three scores tie. The tie list contains all three providers, and the combined result is `needs_review`. The different addresses show why brand plus city and a highest-score rule cannot identify a specific branch on their own. This example is read from the v2 CSV, rather than a live store-locator lookup.
-
-## 13 Completed run and interpretation limits
-
-The v2 run completed on 24 October 2026 with algorithm `evidence-2.0`. It reused 416,255 unique imported provider records: 182,986 Overture, 111,440 ATP and 121,829 OSM records. Candidate-coordinate coverage below counts stops with any eligible positive-score point from that source, including low-score candidates. It is not an accuracy or acceptance rate.
-
-| Run measure | Count |
-|---|---:|
-| Distinct input stops scored | 6,738 |
-| Original price observations preserved | 8,151 |
-| Combined accepted | 16 |
-| Combined needs review | 4,481 |
-| Combined unmatched | 2,241 |
-| Stops with an ATP comparison point | 3,400 |
-| Stops with an Overture comparison point | 4,217 |
-| Stops with an OSM comparison point | 6,025 |
-| Stops with a tied highest source score | 1,692 |
-
-The validation report confirms row preservation, coordinate ranges, score maxima, score/coordinate/source identity consistency and 20,214 per-source result rows. Structural validation does not establish that a station was assigned its true physical branch. The recorded automated tests check implementation behavior and edge cases; a labeled store-level truth set is still needed to measure precision, recall and calibrated confidence.
-
-Current limitations include first-address-only Overture matching, unavailable store identifiers, missing source city/postcode fields, selected-spider ATP coverage and bounded candidate searches. The pipeline does not resolve exits to a road graph, verify route accessibility from a provider point, use truck entrance geometry, or infer a missing branch number from proximity. The geocoding scope ends before route cost and travel-time optimization.
-
-Recommended next work is to validate store-number semantics per spider, expand alternate source addresses, build a reviewed truth set stratified by brand and address type, and add road/exit and truck-entry evidence. These are proposed improvements, not current scoring features.
-
-## 14 Implementation and reproducibility
-
-| File | Responsibility |
-|---|---|
-| `geocoding/providers.py` | Source-specific field mapping, coordinates and lifecycle |
-| `geocoding/normalization.py` | Text keys, brand aliases, subdivisions, store and street normalization |
-| `geocoding/parsing.py` | Store marker, postal address, highway and exit extraction |
-| `geocoding/matching.py` | Weights, score, conflicts, clustering, decisions and highest-source selection |
-| `geocoding/services.py` | Scoped retrieval, per-provider limits, input/acquisition overrides and persistence |
-| `geocoding/exports.py` | Source columns, highest-score columns and original-price-row enrichment |
-| `geocoding/acquisition.py` | Source acquisition, OSM centroid creation and provenance |
-
-The retained outputs are `output/geocoding-v2/geocodes.csv` for distinct stops, `fuel-prices-geocoded.csv` for all original observations, `per-source.jsonl` for source decisions, `geocodes.jsonl` for detailed candidate evidence, and `report.json`, `summary.json` and `validation.json` for run metadata.
-
-To rescore the same verified import locally:
-
-```sh
-.venv/bin/python -u manage.py run_geocoding_pipeline \
-  --acquisition-report output/acquisition/report.json \
-  --reuse-import-report output/geocoding/report.json \
-  --output-dir output/geocoding-v2
+```text
+pair_similarity = max(RapidFuzz ratio, RapidFuzz token_sort_ratio) / 100
+name_similarity = maximum pair_similarity across brand and business-name combinations
 ```
 
-This command checks the input checksum, source releases, export paths and existing database record counts. It writes a new result run and updates input resolution states. Scores and parameters should be versioned whenever weights, normalization, thresholds, candidate scope or interpretation of store IDs changes.
+The selected comparison terms are exported as `compared_input_name` and `compared_source_name`. A missing or inaccurate brand field can therefore be rescued by the raw business name. `KWIK TRIP` and `QUIKTRIP` are explicitly distinct brands despite their similar spelling.
 
-For the current policy constants and tests, inspect `geocoding/matching.py`, `geocoding/tests/test_scoring_v2.py`, `geocoding/tests/test_domain.py` and `geocoding/tests/test_pipeline.py`. This reference documents the current implementation; the code and retained run artifacts provide the authoritative evidence for its behavior.
+The matcher conservatively removes identifiable store-number syntax. It does not blindly delete every digit from business names: digits can be part of a brand. For example, `7-Eleven` must retain its brand identity.
+
+## 4. Joint locality requirement
+
+City, state/province and country are one **required locality group**. All three must be present on both sides. A missing city cannot be compensated by a strong name or a matching exit.
+
+| Component | Comparison | Requirement |
+|---|---|---|
+| Country | Exact canonical code after explicit aliases | Equal, recognized `US` or `CA` |
+| State/province | Exact canonical subdivision code after aliases | Equal and valid for the country |
+| City | Fuzzy token-sort comparison after city normalization | Similarity **≥0.90** |
+
+Examples of equivalent values include `United States`, `USA`, `U.S.` and `US`; `Canada`, `CAN` and `CA`; `Texas`, `Tex.` and `TX`; `Ontario`, `Ont.` and `ON`. Country can be inferred from an unambiguous recognized state/province code when not supplied. Country/state comparisons are not unrestricted fuzzy comparisons because confusing states is especially damaging.
+
+City normalization expands common tokens such as `ST → SAINT`, `FT → FORT`, `MT → MOUNT` and compass directions. Explicit aliases include `NYC → NEW YORK`. `Ft. Worth, Tex., USA` therefore matches `Fort Worth, Texas, United States`. `Tomah` does not automatically match `Tomahawk`.
+
+```text
+locality_complete = all fields present
+                    AND recognized, equal state and country
+                    AND city_similarity >= 0.90
+locality_similarity = city_similarity if locality_complete else 0
+```
+
+If locality is incomplete or conflicts, the final candidate score is **0**, its coordinate is excluded from provider predictions, and its diagnostic record may still be shown for inspection. Equal unknown strings such as `XX / ZZ` do not satisfy locality.
+
+## 5. Highway and exit comparisons
+
+Road references retain network, number, jurisdiction, variant, direction and original text. Supported networks include interstate, US highway, state, county, farm-to-market, provincial, Trans-Canada and unknown highway. Main, business, alternate, bypass, spur and loop variants remain distinct.
+
+Scoring road keys use **jurisdiction + network + normalized route number + variant**. Direction is retained as metadata and is not a scoring component. Leading numeric zeroes are normalized. A missing route jurisdiction is filled from the address country/state when unambiguous. `US Highway 12`, `US Route 12` and `US-12` become equivalent US-route references.
+
+For either the highway set or the scoped-exit set:
+
+```text
+similarity = size(input_set ∩ candidate_set) / min(size(input_set), size(candidate_set))
+```
+
+This is a containment-style overlap score: a provider listing one of several input roads can receive full highway credit. It is not a distance score or proof of road access. If the input has a clue and the provider does not, the provider receives zero points for that criterion.
+
+Exit identity is **highway key + exit identifier**. Exit `143` on I-94 is different from Exit `143` on I-90. An exit is linked conservatively to a preceding single route. Shared-route text such as `I-80/94, EXIT 143` leaves the numbering system unscoped and earns no scoped-exit points. The approximate fallback additionally verifies route membership against its exit reference.
+
+## 6. Weights, formula and gates
+
+| Criterion | Weight | When included in the denominator |
+|---|---:|---|
+| Fuzzy brand/business name | **60%** | Always |
+| Joint city–state–country locality | **30%** | Always |
+| Highways | **7%** | Input has parsed highway keys |
+| Scoped exits | **3%** | Input has a highway-associated exit |
+
+```text
+W = sum(weights applicable to the input)
+criterion_points[k] = 100 × weight[k] × similarity[k] / W
+ungated_score = sum(criterion_points)
+final_score = round(ungated_score, 3)
+
+if name_similarity < 0.70 OR locality_complete is false:
+    final_score = 0
+```
+
+The denominator depends on the input, not on which fields a provider happened to publish. This prevents missing provider fields from increasing a candidate's score. If there is no highway or exit in the input, `W=0.90`, so the effective name/locality split is two-thirds/one-third. If both clues exist, `W=1.00` and the published 60/30/7/3 split applies directly.
+
+The heuristic is not a calibrated probability. No evidence-strength multiplier, square-root coverage penalty, provider-count bonus or hidden store-ID bonus is applied.
+
+| Example, with highway and scoped exit in the input | Name points | Locality points | Highway points | Exit points | Final score |
+|---|---:|---:|---:|---:|---:|
+| Exact name/locality/roads/exit; different provider store ID | 60 | 30 | 7 | 3 | **100** |
+| Exact name/locality; provider has no road/exit clues | 60 | 30 | 0 | 0 | **90** |
+| Name 90%, complete locality with city 95%, exact road/exit | 54 | 28.5 | 7 | 3 | **92.5** |
+| Exact name/roads/exit; wrong state or missing city | 60 | 0 | 7 | 3 | **0**, locality gate |
+| Name below 70%; otherwise exact | Diagnostic points retained | 30 | 7 | 3 | **0**, name gate |
+
+Ungated criterion contributions remain visible for rejected diagnostic candidates, together with the blocking gate. They must not be read as an eligible source match.
+
+## 7. Candidate retrieval and eligibility
+
+The database search is scoped to acquired provider releases, compatible country/state, and city variants meeting the same 90% comparison threshold; blank provider locality fields can enter diagnostics but cannot pass the final locality gate. A broad 50% brand/name text prefilter reduces retrieval volume before final scoring.
+
+Each source has a 500-candidate limit. Exact canonical city then canonical brand receives retrieval priority; store IDs do not. Truncation is reported and prevents automatic acceptance. Within the scored candidates, deterministic ordering uses score, name similarity, provider namespace and source ID. Record IDs stabilize ordering and carry provenance; matching digits do not add evidence.
+
+Closed/temporarily closed records, records with explicit zero existence confidence and non-POI coordinates cannot become final POI predictions. These are availability/precision checks, not additional matching weights. Positive provider confidence values do not change the score.
+
+Input rows sharing an OPIS ID are checked for conflicting name, locality, highways or scoped exits. Different store IDs, postal addresses or postcodes do not create a v3 input conflict. Real conflicting input evidence forces review and disables approximate fallback. All original price observations remain preserved.
+
+## 8. Branch ambiguity, clustering and acceptance
+
+Each provider is scored independently, followed by the combined decision. Nearby records can form a complete-link cluster when their normalized names/locality agree and their coordinates are within 100 m. Between 100 and 250 m they also need shared highway and scoped-exit evidence. The 250 m maximum prevents a chain of points from joining distant stations. Store numbers, streets and postcodes do not merge clusters.
+
+Automatic acceptance requires:
+
+1. Best eligible cluster score **≥85**.
+2. Name similarity **≥0.85** and complete joint locality.
+3. Margin to the next distinct cluster **≥8 points**.
+4. A real eligible POI coordinate, without truncated retrieval, input conflict or incomplete acquisition.
+5. No conflicting high-score source points more than 1 km apart.
+
+Candidates scoring at least 65 that fail acceptance conditions require review. Candidates below that decision threshold are unmatched. An eligible provider candidate can still be displayed with its independent status even when the combined match requires review.
+
+The accepted combined coordinate is a real provider point selected as a medoid of the winning cluster. It is never an average of coordinates from different stations.
+
+## 9. Highest source score and final prediction
+
+`highest_matching_*` always comes from one eligible provider record. The score and latitude/longitude belong to that same record. Exact score ties are retained in `highest_matching_tied_sources`; alphabetical provider order chooses a deterministic display point. Ties do not prove one provider is more reliable.
+
+The final prediction columns choose, in order:
+
+1. Accepted combined POI coordinate.
+2. Highest-scoring eligible provider POI candidate, retaining the review status.
+3. Verified highway/exit approximation, when no eligible named POI exists.
+4. Blank coordinates with an explicit unresolved reason.
+
+`latitude` / `longitude` remain acceptance-controlled. `predicted_latitude` / `predicted_longitude` are broader operational candidates and must be read with `status`, `prediction_method`, `prediction_score` and `is_approximate`.
+
+## 10. Highway/exit fallback when name matching fails
+
+The fallback uses an actual mapped interchange point; it does not invent a fuel-station coordinate or use a city center as the station.
+
+Reference sources are [OpenInterstate's OSM-derived corridor exits](https://github.com/tldev/openinterstate), named OSM settlements from the [OSM GeoParquet mirror](https://github.com/gsueur/osm-geoparquet), and US state polygons from [geoBoundaries](https://www.geoboundaries.org/api/current/gbOpen/USA/ADM1/). Releases, manifests, checksums, licenses and locality derivation are cached. The current prepared index contains **74,217 state-assigned exit records** and **166,748 named settlements**. These are records, not unique physical interchanges.
+
+Required evidence:
+
+1. Input city, valid state and country.
+2. A supported interstate with a single scoped exit number.
+3. A mapped exit assigned to that interstate/number and inside the correct state polygon.
+4. A canonical or fuzzy ≥90% named city anchor in the same state/country, within **20 km** of the exit.
+5. No equally ranked candidate interchange spread beyond **2 km**.
+
+The nearest candidate to the best city anchor is retained. State containment is geometric; the city test is proximity to a named settlement point, not proof of municipal-boundary containment. Opposite-direction exit nodes can differ within one interchange.
+
+Results have `status=approximate`, `prediction_method=highway_exit`, `precision=motorway_exit`, `is_approximate=true` and `fuel_station_verified=false`. The coordinate is the verified exit point, so it is an approximate location for the requested refuelling stop.
+
+```text
+geographic_score = 100 × (0.30 × city_similarity + 0.07 + 0.03) / 0.40
+station_match_score = 30 × city_similarity + 7 + 3   # at most 40
+```
+
+A perfect geographic score of 100 is not a perfect business match. The reported prediction score is the station score, at most **40**, because no name evidence exists. Provider POI coordinate columns and `highest_matching_*` stay blank/zero for these fallback-only cases.
+
+For example, the real I-94 Exit 143 point near Tomah is available at approximately `44.0157724, -90.4927721`. It verifies an interchange, not the identity or driveway of KWIK TRIP #796.
+
+**Current exit coverage is US signed interstates.** Canadian, US/state/provincial routes and unscoped exits are not covered by this reference. They remain unresolved when no eligible named POI exists. The output records the exact reason, including missing city anchors, no nearby verified exit and ambiguous interchanges. Expanding the exit reference can add coverage without changing the scoring scheme.
+
+## 11. Cross-source coordinate differences
+
+For each stop with at least two eligible provider points, compute all available pairwise great-circle distances using radius `6,371,008.8 m`. Approximate exits, rejected diagnostic points and missing coordinates are excluded.
+
+The analysis also checks US source points against the cached state polygons as a diagnostic. This can reveal a point in Kansas whose address claims Pennsylvania, even when the textual locality matches perfectly. It adds no scoring weight and does not decide which provider is ground truth. The analysis records the detected state and reports any metadata/coordinate conflicts separately. The state-reference loader normalizes the published `SU-SD` typo to `SD` for South Dakota.
+
+| Maximum pairwise separation | Flag |
+|---|---|
+| No or one point | `no_coordinates` / `single_source` |
+| ≤250 m | `consistent` |
+| >250 m and <1,000 m | `moderate` |
+| ≥1,000 m and <5,000 m | `divergent` |
+| ≥5,000 m | `severe` |
+
+If two source candidates both score at least 85 and differ by **more than 1,000 m**, add `cross_source_coordinates_diverge` and downgrade combined automatic acceptance to review. All ≥1 km differences remain visible, including those involving lower-scoring candidates. Pairwise distances and maximum distance are exported explicitly.
+
+Large differences may reflect different branches sharing a brand/city, fuzzy-name substitutions, missing road/exit metadata, or stale/mislocated provider records. Those are possible causes, not verified attribution of error. Agreement is also not independent corroboration when sources share upstream data.
+
+See [the actual v3 divergence analysis](coordinate-disagreement-analysis-v3.md) for counts, pair statistics and the largest cases from the completed batch.
+
+## 12. Output files and reproducible run
+
+Prepare the optional geographic reference once, then reuse downloaded/imported POI data:
+
+```sh
+.venv/bin/python manage.py prepare_geographic_reference \
+  --acquisition-report output/acquisition/report.json
+.venv/bin/python -u manage.py run_geocoding_pipeline \
+  --acquisition-report output/acquisition/report.json \
+  --reuse-import-report output/geocoding-v2/report.json \
+  --output-dir output/geocoding-v3
+.venv/bin/python scripts/brand-locality-v3/analyze.py
+```
+
+For the optional state-polygon diagnostics, run `.venv/bin/python scripts/brand-locality-v3/coordinate_states.py` before `analyze.py`.
+
+`prepare_geographic_reference --cached-only` builds/reuses the prepared reference without network access. The main pipeline works without the reference but reports `geographic_reference_not_prepared` when fallback would be needed.
+
+| File | Grain and contents |
+|---|---|
+| `source-comparison.csv` | One row per stop/provider: input/candidate names and locality, fuzzy similarities, all four point contributions, gates, independent source score/status and predicted source coordinates. Rejected coordinates have separate diagnostic columns. |
+| `final-stops.csv` | One row per unique OPIS stop, final predicted coordinate/method/status, highest source score, all provider coordinates and deviation flags. |
+| `fuel-prices-geocoded.csv` | All original price rows, in original order, with appended results. |
+| `coordinate-disagreements.csv` | All stops with at least two source points, largest maximum deviation first. |
+| `geocodes.csv` / `geocodes.jsonl` | Wide comparison and full candidate/evidence audit. |
+| `per-source.jsonl` | Independent source decisions, best candidates and diagnostics. |
+| `report.json` / `validation.json` | Releases, import counts, result totals, fallback coverage, disagreement counts and output-integrity checks. |
+
+Two workbooks in `outputs/truckroute-brand-locality-v3/` present the same completed run:
+
+- `source-matching-analysis.xlsx`: summary, all source comparison rows, ≥1 km coordinate disagreements and state-polygon diagnostics; Excel formulas expose the weighted point calculations.
+- `final-geocoded-locations.xlsx`: summary, unique final stops and all original fuel-price observations.
+
+Matching and coordinates are run snapshots. Editing spreadsheet inputs does not perform new fuzzy matching or geocoding; rerun the pipeline. Currency, price unit and observation time remain unspecified in the input, so route-cost optimization remains a later phase.
+
+Workbook generation uses the bundled `@oai/artifact-tool` runtime. `prepare_data.py` prepares typed JSON from a completed run; `build.mjs` creates and verifies the two XLSX files. The generated outputs are intentionally excluded from Git.
+
+## 13. Implementation and validation
+
+| Responsibility | Implementation |
+|---|---|
+| Brand, locality aliases | [`normalization.py`](../geocoding/normalization.py) |
+| Highway and scoped-exit parsing | [`parsing.py`](../geocoding/parsing.py) |
+| Four weights, fuzzy scores, gates, clustering and distance analysis | [`matching.py`](../geocoding/matching.py) |
+| Provider retrieval and persisted decisions | [`services.py`](../geocoding/services.py) |
+| Verified exit fallback | [`geography.py`](../geocoding/geography.py) |
+| Flat exports and prediction selection | [`exports.py`](../geocoding/exports.py) |
+| Full-output validation and disagreement report | [`analyze.py`](../scripts/brand-locality-v3/analyze.py) |
+
+Regression tests cover store-ID invariance, raw-name rescue, city/state/country aliases, missing/conflicting locality gates, exact four-factor contributions, scoped highways/exits, cross-source separation, verified approximate exits and unsupported/ambiguous fallback. Full-output validation additionally checks every original price value and row order, all unique stop/source pairs, eligible-coordinate gates, coordinate bounds, accepted-only resolved columns, highest-score ownership and independently recomputed pairwise distances.
+
+On 24 October 2026, all **103 Django tests passed**, Ruff reported no issues, and Django reported no pending model migrations. Native workbook validation passed for **20,214 source rows, 6,738 stops and 8,151 price observations**, including the cached formulas and zero spreadsheet error cells. All worksheets were rendered and visually inspected. These are implementation/output-integrity checks; they do not replace labeled real-world location ground truth.

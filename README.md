@@ -1,8 +1,12 @@
 # Truckroute
 
+For the concise schema, search, scoring and fallback reference, see [Geocoding v4 — technical summary](docs/geocoding-v4-technical-summary.md).
+
+The latest [coverage comparison and fallback guide](docs/coverage-comparison-and-fallbacks.md) explains why v3 displayed fewer source points and how the `coverage-4.0` completion pass supplies labeled coordinates for every current input row. Run `.venv/bin/python manage.py prepare_coverage_reference`, then `.venv/bin/python manage.py complete_geocoding_coverage --fetch-census` to reuse the existing v3 POI run with address, exit, highway and locality fallbacks. Results are in `output/geocoding-v4/`; deliverable CSVs are in `outputs/truckroute-coverage-v4/`. Identity scoring still uses the v3 four-factor policy.
+
 Django foundation for normalizing truck refuelling locations and resolving them against Overture Places, AllThePlaces and OpenStreetMap. Routing is a subsequent phase.
 
-The geocoder parses business/store identity, postal addresses, highway networks and route variants, exits, city, state/province and country. It scores candidate records with an auditable 0–100 heuristic and returns `accepted`, `needs_review`, or `unmatched`. Only accepted results receive a resolved coordinate.
+The geocoder parses business/store identity, postal addresses, highway networks and route variants, exits, city, state/province and country. Current scoring uses fuzzy business name/brand (60%), joint city–state–country locality (30%), highways (7%) and scoped exits (3%). Store IDs and postal/street fields do not affect matching. Results are `accepted`, `needs_review`, `approximate` or `unmatched`. Only accepted POIs receive a resolved coordinate; verified exit approximations are explicitly separate.
 
 ## Start locally
 
@@ -59,7 +63,13 @@ Successful source acquisition produces:
 - `output/geocoding/per-source.jsonl`: independent adapter comparisons; failed adapters are marked unavailable.
 - `output/geocoding/report.json`: source releases, import/rejection counts and result totals.
 
-Scoring version `evidence-2.0` adds each source's latitude, longitude, score, status, matched record and evidence coverage to `geocodes.csv`. `highest_matching_*` identifies the highest-scoring available provider point, including explicit score ties. Candidate coordinates can be shown for review or low-score matches; the source status explains their meaning. The combined `latitude`/`longitude` remain acceptance-controlled. `fuel-prices-geocoded.csv` preserves all original price rows and appends these comparison fields. See [scoring v2](docs/scoring-v2.md) for the formula and a local-only rescore command.
+Scoring version `brand-locality-3.1` exports each source's latitude, longitude, score, per-criterion contributions, locality gates and matched record. `highest_matching_*` identifies the highest-scoring eligible provider point and explicit score ties. `predicted_*` chooses an accepted POI, review candidate or approximate geographic point, with its method and status. Combined `latitude`/`longitude` remain acceptance-controlled. `fuel-prices-geocoded.csv` preserves every original price row. See [the current matching reference](docs/matching-criteria-reference.md) for the formula, output definitions and a local rescore command.
+
+The [coordinate-based locality enrichment report](docs/locality-enrichment-results.md) documents missing city/state counts, polygon and bounded nearest-settlement inference, reproducible commands and validation. The latest run fills 83,695 missing city fields and 348 state fields, increasing input stops with a source POI point from 4,758 to 4,970. Current CSV deliverables are in `outputs/truckroute-locality-enriched/`. Raw provider payloads and station coordinates are preserved; nearest-settlement city estimates require review.
+
+The v3 run is written to `output/geocoding-v3/`, including `source-comparison.csv`, `final-stops.csv`, `coordinate-disagreements.csv` and full JSON audit files. The two review workbooks are `outputs/truckroute-brand-locality-v3/source-matching-analysis.xlsx` and `outputs/truckroute-brand-locality-v3/final-geocoded-locations.xlsx`. See [the coordinate disagreement analysis](docs/coordinate-disagreement-analysis-v3.md) for actual counts and the largest deviations.
+
+For approximate fallback, run `.venv/bin/python manage.py prepare_geographic_reference` once. The current reference covers verified US interstate exits and named city anchors. Unsupported routes/countries remain unresolved when a named POI cannot be matched. No fuel-station point is fabricated.
 
 No-source failures produce a failure report rather than an empty successful geocoding run. Source imports are atomic, and a run matches only the successful releases it acquired. If any requested adapter fails, combined candidates require review. Proposed coordinates are not accepted geocodes and must be interpreted with their status and evidence.
 

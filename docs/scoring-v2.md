@@ -1,4 +1,6 @@
-# Evidence score v2
+# Evidence score v2 (archived)
+
+This document describes the previous `evidence-2.0` run. The current policy is [brand/locality scoring v3](matching-criteria-reference.md), which removes store-ID, street and postcode matching weights.
 
 Algorithm version: `evidence-2.0`. Scores are comparable heuristics from 0 to 100. They are not calibrated probabilities and are not percentages of positional accuracy.
 

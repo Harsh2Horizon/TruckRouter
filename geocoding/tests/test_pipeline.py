@@ -20,6 +20,9 @@ from geocoding.tests.test_domain import candidate, query
 
 class PipelineTests(TestCase):
     def setUp(self):
+        fallback = patch("geocoding.geography.get_exit_locator", return_value=None)
+        fallback.start()
+        self.addCleanup(fallback.stop)
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.csv = Path(self.temp.name) / "input.csv"
@@ -224,7 +227,7 @@ class PipelineTests(TestCase):
             rows = list(csv.DictReader(stream))
         self.assertEqual(len(rows), 1)
         row = rows[0]
-        self.assertEqual(row["algorithm_version"], "evidence-2.0")
+        self.assertEqual(row["algorithm_version"], "brand-locality-3.1")
         self.assertEqual(float(row["highest_matching_score"]), 100)
         for provider in manifests:
             self.assertEqual(float(row[f"{provider}_latitude"]), 44)
@@ -236,6 +239,18 @@ class PipelineTests(TestCase):
         report = json.loads((output / "report.json").read_text())
         self.assertEqual(report["status"], "completed")
         self.assertEqual(report["enriched_input_rows"], 2)
+        with (output / "source-comparison.csv").open() as stream:
+            comparisons = list(csv.DictReader(stream))
+        self.assertEqual({r["provider"] for r in comparisons}, set(manifests))
+        self.assertEqual(len(comparisons), 3)
+        self.assertTrue(all(float(r["name_points"]) == 60 for r in comparisons))
+        self.assertTrue(all(float(r["locality_points"]) == 30 for r in comparisons))
+        self.assertTrue(all(r["eligible_point"] == "True" for r in comparisons))
+        with (output / "final-stops.csv").open() as stream:
+            final = list(csv.DictReader(stream))
+        self.assertEqual(len(final), 1)
+        self.assertEqual(final[0]["prediction_method"], "fuel_poi")
+        self.assertEqual(report["coordinate_deviation"]["severity_counts"], {"consistent": 1})
 
     def test_brand_alias_upgrade_does_not_create_an_input_conflict(self):
         self.csv.write_text(

@@ -6,28 +6,34 @@ from math import asin, cos, radians, sin, sqrt
 
 from rapidfuzz.fuzz import ratio, token_sort_ratio
 
-from .normalization import brand_key, store_key, street_key, text_key
-from .schemas import CanonicalAddress, Coordinate, PlaceCandidate
+from .normalization import (
+    BOUNDARY_CITY_WARNING,
+    NEAREST_CITY_WARNING,
+    SUBDIVISIONS,
+    brand_key,
+    city_key,
+    locality_codes,
+    text_key,
+)
+from .schemas import CanonicalAddress, Coordinate, PlaceCandidate, RoadNetwork
 
-ALGORITHM_VERSION = "evidence-2.0"
+ALGORITHM_VERSION = "brand-locality-3.1"
 WEIGHTS = {
-    "brand": 0.20,
-    "name": 0.10,
-    "store_id": 0.22,
-    "city": 0.14,
-    "state": 0.07,
-    "country": 0.03,
-    "postcode": 0.04,
-    "street": 0.08,
-    "house_number": 0.03,
+    "name": 0.60,
+    "locality": 0.30,
     "highways": 0.07,
-    "exits": 0.02,
+    "exits": 0.03,
 }
-FULL_EVIDENCE_WEIGHT = 0.60
-ACCEPT_THRESHOLD = 90.0
+FULL_EVIDENCE_WEIGHT = 1.0
+ACCEPT_THRESHOLD = 85.0
 REVIEW_THRESHOLD = 65.0
 MIN_MARGIN = 8.0
 CLUSTER_RADIUS_METERS = 250.0
+CITY_MATCH_THRESHOLD = 0.90
+NAME_MATCH_THRESHOLD = 0.70
+NAME_ACCEPT_THRESHOLD = 0.85
+CROSS_SOURCE_REVIEW_METERS = 1000.0
+CROSS_SOURCE_SEVERE_METERS = 5000.0
 CLOSED_STATUSES = {"permanently_closed", "closed", "temporarily_closed"}
 
 
@@ -36,10 +42,104 @@ def similarity(a: str, b: str) -> float:
 
 
 def business_name(address: CanonicalAddress) -> str:
-    """The explicit store token is compared once, in store_id."""
+    """Store identifiers are stripped from identity text and never compared."""
     value = (address.raw_name or address.name).partition("#")[0]
     value = re.sub(r"\b(?:STORE|LOCATION)\s*(?:NO\.?\s*)?\d+[A-Z]?\s*$", "", value, flags=re.I)
     return brand_key(value)
+
+
+def identity_key(value: str) -> str:
+    value = brand_key(value.partition("#")[0])
+    value = re.sub(r"\b(?:STORE|LOCATION|NO)\s+\d+[A-Z]?\s*$", "", value)
+    # Descriptive business suffixes do not identify a different brand.
+    value = re.sub(
+        r"\b(?:TRAVEL CENTERS?|TRAVEL PLAZA|TRUCK STOPS?|CONVENIENCE STORE|FUEL STOP)\b",
+        " ",
+        value,
+    )
+    return " ".join(value.split())
+
+
+def name_similarity(query: CanonicalAddress, candidate: CanonicalAddress) -> tuple[float, dict]:
+    left = [identity_key(query.brand), identity_key(business_name(query))]
+    right = [identity_key(candidate.brand), identity_key(business_name(candidate))]
+    generic = {"", "UNKNOWN", "FUEL", "GAS STATION", "TRUCK STOP", "EXPRESS", "TRAVEL CENTER"}
+    scores = []
+    for a in left:
+        for b in right:
+            if a in generic or b in generic:
+                continue
+            if {a, b} == {"KWIK TRIP", "QUIKTRIP"}:
+                continue
+            scores.append((max(ratio(a, b), token_sort_ratio(a, b)) / 100, a, b))
+    best = max(scores, default=(0.0, "", ""))
+    return best[0], {
+        "input_name": best[1],
+        "candidate_name": best[2],
+        "method": "max normalized brand or business-name fuzzy similarity",
+    }
+
+
+def city_similarity(left: str, right: str) -> float:
+    return similarity(city_key(left), city_key(right))
+
+
+def locality_evidence(query: CanonicalAddress, candidate: CanonicalAddress) -> dict:
+    qs, qc = locality_codes(query.state, query.country)
+    cs, cc = locality_codes(candidate.state, candidate.country)
+    city = city_similarity(query.city, candidate.city)
+    state = float(bool(qs and cs and qs == cs))
+    country = float(bool(qc and cc and qc == cc))
+    missing = [
+        key
+        for key in ("city", "state", "country")
+        if not getattr(query, key) or not getattr(candidate, key)
+    ]
+    recognized = (
+        qc in SUBDIVISIONS
+        and cc in SUBDIVISIONS
+        and qs in SUBDIVISIONS[qc]
+        and cs in SUBDIVISIONS[cc]
+    )
+    complete = (
+        not missing and recognized and state == 1 and country == 1 and city >= CITY_MATCH_THRESHOLD
+    )
+    return {
+        "city": round(city, 6),
+        "state": state,
+        "country": country,
+        "complete": complete,
+        "missing": missing,
+        "input_city": city_key(query.city),
+        "candidate_city": city_key(candidate.city),
+        "input_state": qs,
+        "candidate_state": cs,
+        "input_country": qc,
+        "candidate_country": cc,
+        "candidate_city_method": "nearest_settlement"
+        if NEAREST_CITY_WARNING in candidate.warnings
+        else "point_in_polygon"
+        if BOUNDARY_CITY_WARNING in candidate.warnings
+        else "provider",
+    }
+
+
+def road_keys(address):
+    state, country = locality_codes(address.state, address.country)
+    result = {}
+    for road in address.highways:
+        jurisdiction = road.jurisdiction
+        if road.network in {
+            RoadNetwork.INTERSTATE,
+            RoadNetwork.US_HIGHWAY,
+            RoadNetwork.TRANS_CANADA,
+        }:
+            jurisdiction = jurisdiction or country
+        elif not jurisdiction or jurisdiction == country:
+            jurisdiction = f"{country}-{state}" if country and state else jurisdiction
+        number = str(int(road.number)) if road.number.isdigit() else road.number.upper()
+        result[road.key] = f"{jurisdiction}:{road.network}:{number}:{road.variant}"
+    return result
 
 
 def brand_similarity(left: str, right: str) -> float:
@@ -70,108 +170,94 @@ class MatchScore:
     evidence_strength: float = 0.0
     applicable_fields: list[str] = field(default_factory=list)
     missing_in_query: list[str] = field(default_factory=list)
+    locality: dict = field(default_factory=dict)
+    name_match: dict = field(default_factory=dict)
+    contributions: dict[str, float] = field(default_factory=dict)
+    ungated_score: float = 0.0
 
     def to_dict(self):
         return asdict(self)
 
 
 def score_addresses(query: CanonicalAddress, candidate: CanonicalAddress) -> MatchScore:
-    components = {}
+    name, name_match = name_similarity(query, candidate)
+    locality = locality_evidence(query, candidate)
+    components = {"name": name, "locality": locality["city"] if locality["complete"] else 0.0}
+    applicable, missing = ["name", "locality"], []
     conflicts = []
-    applicable = []
-    for key in WEIGHTS:
-        if key in {"highways", "exits"}:
-            left, right = getattr(query, key), getattr(candidate, key)
-            if key == "exits":
-                left = [e for e in left if e.highway_key]
-                right = [e for e in right if e.highway_key]
-        elif key == "name":
-            left, right = business_name(query), business_name(candidate)
+    if not locality["complete"]:
+        conflicts.append("locality_incomplete" if locality["missing"] else "locality_conflict")
+    if name < NAME_MATCH_THRESHOLD:
+        conflicts.append("name_not_matched")
+    for key in ("highways", "exits"):
+        left, right = getattr(query, key), getattr(candidate, key)
+        if key == "highways":
+            left, right = set(road_keys(query).values()), set(road_keys(candidate).values())
         else:
-            left, right = getattr(query, key), getattr(candidate, key)
+            qroads, croads = road_keys(query), road_keys(candidate)
+            left = {
+                (qroads.get(e.highway_key, e.highway_key), e.identifier.upper())
+                for e in left
+                if e.highway_key
+            }
+            right = {
+                (croads.get(e.highway_key, e.highway_key), e.identifier.upper())
+                for e in right
+                if e.highway_key
+            }
         if left:
             applicable.append(key)
-        if not left or not right:
-            continue
-        if key == "store_id":
-            components[key] = float(store_key(left) == store_key(right))
-        elif key in {"state", "country", "postcode", "house_number"}:
-            components[key] = float(text_key(left) == text_key(right))
-        elif key == "brand":
-            components[key] = brand_similarity(left, right)
-        elif key == "street":
-            components[key] = ratio(street_key(left), street_key(right)) / 100
-        elif key == "highways":
-            left, right = {h.key for h in left}, {h.key for h in right}
-            # A street address can name just one of the input's access highways.
-            components[key] = len(left & right) / min(len(left), len(right))
-        elif key == "exits":
-            left = {(e.highway_key, e.identifier) for e in left}
-            right = {(e.highway_key, e.identifier) for e in right}
-            components[key] = len(left & right) / min(len(left), len(right))
-        else:
-            components[key] = similarity(left, right)
-    if query.brand_wikidata and candidate.brand_wikidata:
-        components["brand"] = float(query.brand_wikidata == candidate.brand_wikidata)
-        if "brand" not in applicable:
-            applicable.append("brand")
-    for key in ("country", "state"):
-        if key in components and components[key] == 0:
-            conflicts.append(f"{key}_conflict")
-    if components.get("brand", 1) < 0.55:
-        conflicts.append("brand_conflict")
-    if components.get("store_id") == 0:
-        conflicts.append("store_id_conflict")
-    if components.get("house_number") == 0:
-        conflicts.append("house_number_conflict")
+            components[key] = len(left & right) / min(len(left), len(right)) if right else 0.0
+            if not right:
+                missing.append(key)
+    if not locality["complete"]:
+        missing.extend(f"locality.{key}" for key in locality["missing"])
     applicable_weight = sum(WEIGHTS[key] for key in applicable)
-    compared_weight = sum(WEIGHTS[key] for key in components)
-    coverage = compared_weight / applicable_weight if applicable_weight else 0.0
-    average = (
-        sum(WEIGHTS[key] * value for key, value in components.items()) / compared_weight
-        if compared_weight
-        else 0
-    )
-    strength = min(1.0, compared_weight / FULL_EVIDENCE_WEIGHT)
-    score = 100 * average * sqrt(min(1.0, coverage)) * strength
+    contributions = {
+        key: 100 * WEIGHTS[key] * components[key] / applicable_weight for key in applicable
+    }
+    score = sum(contributions.values())
+    available_weight = sum(WEIGHTS[key] for key in applicable if key not in missing)
+    if not locality["complete"]:
+        available_weight -= WEIGHTS["locality"]
+    coverage = max(0.0, available_weight / applicable_weight)
     return MatchScore(
         score=0.0 if conflicts else round(min(100.0, score), 3),
-        similarity=round(average, 4),
+        similarity=round(score / 100, 6),
         coverage=round(coverage, 4),
         components=components,
-        missing=[key for key in applicable if key not in components],
+        missing=missing,
         conflicts=conflicts,
         applicable_weight=round(applicable_weight, 4),
-        compared_weight=round(compared_weight, 4),
-        evidence_strength=round(strength, 4),
+        compared_weight=round(max(0.0, available_weight), 4),
+        evidence_strength=1.0,
         applicable_fields=applicable,
         missing_in_query=[key for key in WEIGHTS if key not in applicable],
+        locality=locality,
+        name_match=name_match,
+        contributions={key: round(value, 6) for key, value in contributions.items()},
+        ungated_score=round(score, 3),
     )
 
 
 def branch_evidence(
     query: CanonicalAddress, candidate: CanonicalAddress, score: MatchScore
 ) -> bool:
-    brand_ok = score.components.get("brand", 0) >= 0.9
-    store_ok = bool(
-        query.store_id
-        and candidate.store_id
-        and store_key(query.store_id) == store_key(candidate.store_id)
-    )
-    street_ok = bool(
-        query.house_number
-        and candidate.house_number
-        and query.street
-        and candidate.street
-        and text_key(query.house_number) == text_key(candidate.house_number)
-        and score.components.get("street", 0) >= 0.95
-    )
-    locality_ok = (
-        score.components.get("city", 0) >= 0.85 or score.components.get("postcode", 0) == 1
-    )
-    # A brand/store identifier alone can recur across nations and administrative regions.
-    scope_ok = score.components.get("country") == 1 and score.components.get("state") == 1
-    return brand_ok and (store_ok or street_ok) and locality_ok and scope_ok
+    return score.components.get("name", 0) >= NAME_ACCEPT_THRESHOLD and score.locality["complete"]
+
+
+def input_addresses_disagree(left, right):
+    """Input quality overrides use only the same four allowed evidence groups."""
+    if not locality_evidence(left, right)["complete"]:
+        return True
+    if name_similarity(left, right)[0] < NAME_MATCH_THRESHOLD:
+        return True
+    lroads, rroads = set(road_keys(left).values()), set(road_keys(right).values())
+    if lroads and rroads and not lroads & rroads:
+        return True
+    lexits = {(e.highway_key, e.identifier) for e in left.exits if e.highway_key}
+    rexits = {(e.highway_key, e.identifier) for e in right.exits if e.highway_key}
+    return bool(lexits and rexits and not lexits & rexits)
 
 
 def same_place(a: PlaceCandidate, b: PlaceCandidate) -> bool:
@@ -183,25 +269,9 @@ def same_place(a: PlaceCandidate, b: PlaceCandidate) -> bool:
     score = score_addresses(a.address, b.address)
     if score.conflicts:
         return False
-    store_ok = bool(
-        a.address.store_id
-        and b.address.store_id
-        and store_key(a.address.store_id) == store_key(b.address.store_id)
-    )
-    street_ok = bool(
-        a.address.house_number
-        and b.address.house_number
-        and a.address.street
-        and b.address.street
-        and text_key(a.address.house_number) == text_key(b.address.house_number)
-        and score.components.get("street", 0) >= 0.95
-    )
-    name_ok = bool(
-        business_name(a.address) not in {"", "UNKNOWN", "FUEL", "GAS STATION", "TRUCK STOP"}
-        and score.components.get("name", 0) >= 0.95
-        and score.components.get("brand", 1) >= 0.9
-    )
-    return store_ok or street_ok or (distance <= 35 and name_ok)
+    name_ok = score.components.get("name", 0) >= 0.90 and score.locality["complete"]
+    road_ok = score.components.get("highways", 0) > 0 and score.components.get("exits", 0) > 0
+    return name_ok and (distance <= 100 or road_ok)
 
 
 def _rank_scored(query: CanonicalAddress, ranked, *, truncated=False):
@@ -249,7 +319,9 @@ def _rank_scored(query: CanonicalAddress, ranked, *, truncated=False):
         if margin < MIN_MARGIN:
             reasons.append("competing_location_with_similar_score")
         if not branch_evidence(query, best["candidate"].address, best["evidence"]):
-            reasons.append("insufficient_branch_or_locality_evidence")
+            reasons.append("insufficient_name_or_locality_evidence")
+        if NEAREST_CITY_WARNING in best["candidate"].address.warnings:
+            reasons.append("approximate_locality_requires_review")
         if representative is None:
             reasons.append("no_poi_coordinate")
         if truncated:
@@ -281,8 +353,13 @@ def _rank_scored(query: CanonicalAddress, ranked, *, truncated=False):
         },
         "scoring": {
             "weights": WEIGHTS,
-            "formula": "100 * weighted_similarity * sqrt(coverage) * evidence_strength",
-            "full_evidence_weight": FULL_EVIDENCE_WEIGHT,
+            "formula": (
+                "100 * sum(weight * similarity) / applicable_input_weight; locality and name gates"
+            ),
+            "city_match_threshold": CITY_MATCH_THRESHOLD,
+            "name_match_threshold": NAME_MATCH_THRESHOLD,
+            "name_accept_threshold": NAME_ACCEPT_THRESHOLD,
+            "store_ids_used": False,
             "calibrated_probability": False,
         },
         "best_candidate": _best_located(ranked),
@@ -353,6 +430,8 @@ def _best_located(ranked):
         "city": candidate.address.city,
         "state": candidate.address.state,
         "precision": candidate.precision,
+        "country": candidate.address.country,
+        "evidence": best["evidence"].to_dict(),
     }
 
 
@@ -368,6 +447,7 @@ def rank_candidates(
     ranked.sort(
         key=lambda row: (
             -row["evidence"].score,
+            -row["evidence"].components.get("name", 0),
             row["candidate"].provider,
             row["candidate"].namespace,
             row["candidate"].source_id,
@@ -378,12 +458,17 @@ def rank_candidates(
     per_source = {}
     for provider in providers:
         limited = provider in truncated_providers if truncated_providers is not None else truncated
+        source_rows = [row for row in ranked if row["candidate"].provider == provider]
         decision = _rank_scored(
             query,
-            [row for row in ranked if row["candidate"].provider == provider],
+            source_rows,
             truncated=limited,
         )
         best = decision["best_candidate"]
+        diagnostic = source_rows[0] if source_rows else None
+        evidence = (
+            best["evidence"] if best else diagnostic["evidence"].to_dict() if diagnostic else None
+        )
         per_source[provider] = {
             "status": decision["status"],
             "score": best["score"] if best else 0.0,
@@ -393,6 +478,9 @@ def rank_candidates(
             "matched_address": best["address"] if best else "",
             "matched_city": best["city"] if best else "",
             "matched_state": best["state"] if best else "",
+            "matched_country": best["country"] if best else "",
+            "precision": best["precision"] if best else "unknown",
+            "criteria": evidence,
             "evidence_coverage": best["evidence_coverage"] if best else 0.0,
             "margin": best["margin"] if best else 0.0,
             "coordinate": decision["coordinate"],
@@ -400,10 +488,73 @@ def rank_candidates(
             "decision_score": decision["score"],
             "reasons": decision["reasons"],
             "candidate_search_truncated": limited,
+            "diagnostic_candidate": {
+                "source": identity(diagnostic["candidate"]),
+                "name": diagnostic["candidate"].address.raw_name,
+                "city": diagnostic["candidate"].address.city,
+                "state": diagnostic["candidate"].address.state,
+                "country": diagnostic["candidate"].address.country,
+                "coordinate": diagnostic["candidate"].coordinate.model_dump()
+                if diagnostic["candidate"].coordinate
+                else None,
+            }
+            if diagnostic and not best
+            else None,
         }
     result["per_source"] = per_source
     update_highest_match(result)
+    result["coordinate_disagreement"] = coordinate_disagreement(per_source)
+    disagreement = result["coordinate_disagreement"]
+    if disagreement["credible_max_distance_m"] > CROSS_SOURCE_REVIEW_METERS:
+        result["reasons"].append("cross_source_coordinates_diverge")
+        if result["status"] == "accepted":
+            result.update(status="needs_review", coordinate=None, selected_source=None)
     return result
+
+
+def coordinate_disagreement(per_source):
+    from itertools import combinations
+
+    located = [(p, r) for p, r in per_source.items() if r.get("matched_coordinate")]
+    pairs, credible = {}, []
+    for (p, left), (q, right) in combinations(located, 2):
+        distance = distance_meters(
+            Coordinate(**left["matched_coordinate"]), Coordinate(**right["matched_coordinate"])
+        )
+        pairs[f"{p}__{q}"] = round(distance, 3)
+        if left["score"] >= ACCEPT_THRESHOLD and right["score"] >= ACCEPT_THRESHOLD:
+            credible.append(distance)
+    maximum = max(pairs.values(), default=0.0)
+    if len(located) < 2:
+        severity = "single_source" if located else "no_coordinates"
+    elif maximum >= CROSS_SOURCE_SEVERE_METERS:
+        severity = "severe"
+    elif maximum >= CROSS_SOURCE_REVIEW_METERS:
+        severity = "divergent"
+    elif maximum > CLUSTER_RADIUS_METERS:
+        severity = "moderate"
+    else:
+        severity = "consistent"
+    names = {r.get("matched_name") for _, r in located}
+    note = ""
+    if maximum >= CROSS_SOURCE_REVIEW_METERS:
+        note = (
+            "Possible different branches in the same locality; inspect road and exit evidence"
+            if len(names) <= 1
+            else (
+                "Possible branch or fuzzy-name disagreement; inspect source names and road evidence"
+            )
+        )
+    return {
+        "pairwise_meters": pairs,
+        "max_distance_m": maximum,
+        "credible_max_distance_m": round(max(credible, default=0.0), 3),
+        "severity": severity,
+        "source_count": len(located),
+        "possible_cause": note,
+        "review_threshold_m": CROSS_SOURCE_REVIEW_METERS,
+        "severe_threshold_m": CROSS_SOURCE_SEVERE_METERS,
+    }
 
 
 def update_highest_match(result):

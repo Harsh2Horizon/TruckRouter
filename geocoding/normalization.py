@@ -1,5 +1,9 @@
 import re
 import unicodedata
+from functools import lru_cache
+
+NEAREST_CITY_WARNING = "city_from_nearest_settlement_requires_review"
+BOUNDARY_CITY_WARNING = "city_from_spatial_boundary"
 
 # Explicit aliases only: Kwik Trip and QuikTrip are different brands.
 BRAND_ALIASES = {
@@ -18,6 +22,8 @@ BRAND_ALIASES = {
     "CASEYS GENERAL STORE": "CASEYS",
     "MAVERIK COUNTRY STORE": "MAVERIK",
     "ALLSUPS CONVENIENCE STORE": "ALLSUPS",
+    "QUIK TRIP": "QUIKTRIP",
+    "KWIKTRIP": "KWIK TRIP",
 }
 
 SUBDIVISIONS = {
@@ -74,7 +80,7 @@ def country_code(value: str) -> str:
 
 
 def subdivision(state: str, country: str = "") -> tuple[str, str]:
-    country = country.upper()
+    country = country_code(country)
     state = state.upper().strip()
     if re.match(r"^(US|CA)-", state):
         country, state = state.split("-", 1)
@@ -82,9 +88,63 @@ def subdivision(state: str, country: str = "") -> tuple[str, str]:
         if country and nation != country:
             continue
         for code, name in regions.items():
-            if text_key(state) in (code, text_key(name)):
+            state_key = text_key(state).replace(" ", "")
+            if state_key in (code, text_key(name).replace(" ", "")):
                 return code, country or nation
     return state, country
+
+
+@lru_cache(maxsize=100000)
+def city_key(value: str) -> str:
+    aliases = {
+        "ST": "SAINT",
+        "STE": "SAINTE",
+        "FT": "FORT",
+        "MT": "MOUNT",
+        "N": "NORTH",
+        "S": "SOUTH",
+        "E": "EAST",
+        "W": "WEST",
+        "NE": "NORTHEAST",
+        "NW": "NORTHWEST",
+        "SE": "SOUTHEAST",
+        "SW": "SOUTHWEST",
+    }
+    result = " ".join(aliases.get(token, token) for token in text_key(value).split())
+    return {
+        "NYC": "NEW YORK",
+        "N Y C": "NEW YORK",
+        "NEW YORK CITY": "NEW YORK",
+        "QUEBEC CITY": "QUEBEC",
+        "STLOUIS": "SAINT LOUIS",
+        "INDIANAPOLIS CITY BALANCE": "INDIANAPOLIS",
+        "MILFORD CITY BALANCE": "MILFORD",
+        "NASHVILLE DAVIDSON METROPOLITAN GOVERNMENT BALANCE": "NASHVILLE",
+        "LOUISVILLE JEFFERSON COUNTY METRO GOVERNMENT BALANCE": "LOUISVILLE",
+        "ATHENS CLARKE COUNTY UNIFIED GOVERNMENT BALANCE": "ATHENS",
+        "AUGUSTA RICHMOND COUNTY CONSOLIDATED GOVERNMENT BALANCE": "AUGUSTA",
+        "BUTTE SILVER BOW BALANCE": "BUTTE",
+        "LEXINGTON FAYETTE": "LEXINGTON",
+        "LEXINGTON FAYETTE URBAN COUNTY": "LEXINGTON",
+        "MACON BIBB COUNTY": "MACON",
+    }.get(result, result)
+
+
+def locality_codes(state: str, country: str) -> tuple[str, str]:
+    country = country_code(country)
+    state_aliases = {
+        "CALIF": "CA",
+        "TEX": "TX",
+        "PENN": "PA",
+        "PENNA": "PA",
+        "WISC": "WI",
+        "ONT": "ON",
+        "QUE": "QC",
+        "SASK": "SK",
+        "ALTA": "AB",
+    }
+    state = state_aliases.get(text_key(state), state)
+    return subdivision(state, country)
 
 
 def store_key(value: str) -> str:

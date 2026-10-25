@@ -7,9 +7,10 @@ from pathlib import Path
 import ijson
 from django.db import transaction
 
+from .matching import input_addresses_disagree
 from .models import FuelLocation, FuelObservation
-from .normalization import brand_key
 from .parsing import parse_address
+from .schemas import CanonicalAddress
 
 
 def records_from_file(filename: str, file_format: str):
@@ -80,11 +81,9 @@ def import_fuel_csv(filename: str, source="opis") -> dict:
             report["locations_created"] += created
             if not created:
                 old = location.address
-                disagreement = any(
-                    old.get(key) != getattr(canonical, key)
-                    for key in ("city", "state", "country", "store_id", "raw_address")
+                disagreement = input_addresses_disagree(
+                    CanonicalAddress.model_validate(old), canonical
                 )
-                disagreement = disagreement or brand_key(old.get("brand", "")) != canonical.brand
                 if disagreement and "conflicting_input_rows" not in location.warnings:
                     location.warnings.append("conflicting_input_rows")
                     location.resolution_status = "needs_review"

@@ -3,13 +3,16 @@ from django.db.models import Case, IntegerField, Q, Value, When
 
 from .matching import (
     ALGORITHM_VERSION,
-    brand_similarity,
+    business_name,
+    city_similarity,
+    identity_key,
+    input_addresses_disagree,
     rank_candidates,
     similarity,
     update_highest_match,
 )
 from .models import FuelLocation, GeocodingRun, MatchCandidate, SourcePlace
-from .normalization import brand_key, store_key
+from .normalization import brand_key, city_key, locality_codes, store_key
 from .schemas import CanonicalAddress, Coordinate, PlaceCandidate
 
 
@@ -87,44 +90,61 @@ def as_candidate(place: SourcePlace) -> PlaceCandidate:
     )
 
 
-def retrieve_candidates(query: CanonicalAddress, limit=500, *, source_scope=None):
+def retrieve_candidates(query: CanonicalAddress, limit=500, *, source_scope=None, key_cache=None):
     records = SourcePlace.objects.all()
     if source_scope is not None:
         scope = Q(pk__in=[])
         for provider, release in source_scope.items():
             scope |= Q(provider=provider, release=release)
         records = records.filter(scope)
-    for key in ("country", "state"):
-        value = getattr(query, key)
+    state, country = locality_codes(query.state, query.country)
+    scope_key = (
+        tuple(sorted(source_scope.items())) if source_scope is not None else None,
+        country,
+        state,
+    )
+
+    def distinct_keys(key, queryset):
+        # A batch owns this cache while its imported source releases are immutable.
+        # Ordinary API calls do not share it, so provider updates remain visible.
+        if key_cache is None:
+            return list(queryset)
+        if key not in key_cache:
+            key_cache[key] = list(queryset)
+        return key_cache[key]
+
+    for key, value in (("country", country), ("state", state)):
         if value:
             records = records.filter(Q(**{key: value}) | Q(**{key: ""}))
     # Compare distinct text keys first, then fetch only eligible records and raw payloads.
     # This preserves the fuzzy rules without scanning every JSON payload for each input.
+    exact_cities = []
     if query.city:
-        cities = records.order_by().values_list("city_key", flat=True).distinct()
-        eligible_cities = [
-            city for city in cities if not city or similarity(query.city, city) >= 0.70
-        ]
-        city_block = Q(city_key__in=eligible_cities)
-        if query.store_id:
-            city_block |= Q(store_id=store_key(query.store_id))
-        records = records.filter(city_block)
-    if query.brand:
-        brands = records.order_by().values_list("brand_key", flat=True).distinct()
-        eligible_brands = [
-            brand for brand in brands if not brand or brand_similarity(query.brand, brand) >= 0.5
-        ]
-        records = records.filter(brand_key__in=eligible_brands)
-    priorities = {
-        "_store_priority": Case(
-            When(store_id=store_key(query.store_id), then=Value(0)),
-            default=Value(1),
-            output_field=IntegerField(),
+        cities = distinct_keys(
+            ("cities", scope_key), records.order_by().values_list("city_key", flat=True).distinct()
         )
-        if query.store_id
-        else Value(1),
+        eligible_cities = [
+            city for city in cities if not city or city_similarity(query.city, city) >= 0.90
+        ]
+        exact_cities = [city for city in eligible_cities if city_key(city) == city_key(query.city)]
+        city_block = Q(city_key__in=eligible_cities)
+        records = records.filter(city_block)
+    if query.brand or query.raw_name:
+        keys = distinct_keys(
+            ("names", scope_key, city_key(query.city)),
+            records.order_by().values_list("brand_key", "name_key").distinct(),
+        )
+        terms = [identity_key(query.brand), identity_key(business_name(query))]
+        eligible_brands, eligible_names = set(), set()
+        for brand, name in keys:
+            if any(similarity(term, identity_key(brand)) >= 0.5 for term in terms if term):
+                eligible_brands.add(brand)
+            if any(similarity(term, identity_key(name)) >= 0.5 for term in terms if term):
+                eligible_names.add(name)
+        records = records.filter(Q(brand_key__in=eligible_brands) | Q(name_key__in=eligible_names))
+    priorities = {
         "_city_priority": Case(
-            When(city_key=query.city, then=Value(0)),
+            When(city_key__in=exact_cities, then=Value(0)),
             When(city_key="", then=Value(2)),
             default=Value(1),
             output_field=IntegerField(),
@@ -149,7 +169,7 @@ def retrieve_candidates(query: CanonicalAddress, limit=500, *, source_scope=None
         subset = list(
             records.filter(provider=provider)
             .annotate(**priorities)
-            .order_by("_store_priority", "_city_priority", "_brand_priority", "pk")[: limit + 1]
+            .order_by("_city_priority", "_brand_priority", "pk")[: limit + 1]
         )
         found.extend(subset[:limit])
         if len(subset) > limit:
@@ -164,8 +184,11 @@ def resolve(
     *,
     source_scope=None,
     acquisition_incomplete=False,
+    candidate_key_cache=None,
 ) -> GeocodingRun:
-    records, truncated = retrieve_candidates(query, source_scope=source_scope)
+    records, truncated = retrieve_candidates(
+        query, source_scope=source_scope, key_cache=candidate_key_cache
+    )
     candidates = [as_candidate(record) for record in records]
     result = rank_candidates(
         query,
@@ -182,13 +205,31 @@ def resolve(
             for provider in result["per_source"]
         },
     }
+    input_conflict = bool(location and location.warnings)
+    if input_conflict and location.observations.exists():
+        from .parsing import parse_address
+
+        input_conflict = any(
+            input_addresses_disagree(
+                query,
+                parse_address(
+                    {
+                        "name": raw["Truckstop Name"],
+                        "address": raw["Address"],
+                        "city": raw["City"],
+                        "state": raw["State"],
+                    }
+                ),
+            )
+            for raw in location.observations.values_list("raw", flat=True)
+        )
     if source_scope is not None:
         result["source_scope"] = source_scope
     if acquisition_incomplete:
         result["reasons"].append("source_acquisition_incomplete")
         if result["status"] == "accepted":
             result.update(status="needs_review", coordinate=None, selected_source=None)
-    if location and location.warnings:
+    if input_conflict:
         result["reasons"].append("input_records_disagree")
         result["status"] = "needs_review"
         result["coordinate"] = None
@@ -198,6 +239,9 @@ def resolve(
             if entry["status"] == "accepted":
                 entry.update(status="needs_review", coordinate=None, selected_source=None)
         update_highest_match(result)
+    from .geography import apply_geographic_fallback
+
+    apply_geographic_fallback(result, query, input_conflict=input_conflict)
     run = GeocodingRun.objects.create(
         location=location,
         query=query.model_dump(mode="json"),

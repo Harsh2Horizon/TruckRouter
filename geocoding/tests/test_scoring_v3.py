@@ -18,16 +18,16 @@ class EvidenceScoreTests(TestCase):
         self.assertEqual(full.score, 100)
         self.assertEqual(full.coverage, 1)
         self.assertEqual(full.evidence_strength, 1)
-        self.assertIn("postcode", full.missing_in_query)
+        self.assertNotIn("postcode", full.missing_in_query)
         self.assertNotIn("postcode", full.missing)
 
     def test_missing_store_is_not_counted_as_a_name_disagreement(self):
         score = score_addresses(query(), query(name="KWIK TRIP"))
         self.assertEqual(score.components["name"], 1)
         self.assertNotIn("store_id", score.components)
-        self.assertIn("store_id", score.missing)
-        self.assertLess(score.coverage, 1)
-        self.assertLess(score.score, 100)
+        self.assertNotIn("store_id", score.missing)
+        self.assertEqual(score.coverage, 1)
+        self.assertEqual(score.score, 100)
 
     def test_sparse_exact_fields_cannot_score_like_a_full_address(self):
         partial = query(name="KWIK TRIP", address="", city="")
@@ -35,20 +35,19 @@ class EvidenceScoreTests(TestCase):
         full = score_addresses(query(), query())
         self.assertLess(score.score, 65)
         self.assertLess(score.score, full.score)
-        self.assertLess(score.evidence_strength, 1)
+        self.assertIn("locality_incomplete", score.conflicts)
 
     def test_brand_aliases_apply_to_existing_canonical_records(self):
         left = query(name="FLYING J TRAVEL PLAZA #10")
         right = query(name="FLYING J #10")
         left.brand = "FLYING J TRAVEL PLAZA"  # A record imported before v2.
         score = score_addresses(left, right)
-        self.assertEqual(score.components["brand"], 1)
         self.assertEqual(score.components["name"], 1)
 
     def test_kwik_trip_and_quiktrip_are_distinct_brands(self):
         score = score_addresses(query(), query(name="QUIKTRIP #796"))
         self.assertEqual(score.score, 0)
-        self.assertIn("brand_conflict", score.conflicts)
+        self.assertIn("name_not_matched", score.conflicts)
 
     def test_one_shared_access_highway_is_positive_evidence(self):
         score = score_addresses(query(), query(address="I-94"))
@@ -88,7 +87,7 @@ class EvidenceScoreTests(TestCase):
             if changes == "closed":
                 item.operating_status = "permanently_closed"
             elif changes == "conflict":
-                item.address.store_id = "797"
+                item.address.state = "MN"
             else:
                 item.precision = "locality"
             result = rank_candidates(query(), [item])

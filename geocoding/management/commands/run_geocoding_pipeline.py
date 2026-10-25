@@ -17,7 +17,14 @@ from geocoding.downloads import (
     fetch_overture,
     parse_bbox,
 )
-from geocoding.exports import CSV_FIELDS, comparison_row, enrich_input_csv
+from geocoding.exports import (
+    CSV_FIELDS,
+    SOURCE_COMPARISON_FIELDS,
+    comparison_row,
+    enrich_input_csv,
+    source_comparison_rows,
+    write_analysis_exports,
+)
 from geocoding.ingestion import import_fuel_csv, records_from_file
 from geocoding.matching import ALGORITHM_VERSION
 from geocoding.models import FuelLocation, SourcePlace
@@ -42,6 +49,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--reuse-import-report",
             help="Reuse database imports verified by a previous pipeline report",
+        )
+        parser.add_argument(
+            "--enrichment-report",
+            help="Completed locality-enrichment audit for the indexed records",
         )
         parser.add_argument(
             "--atp-spiders-file", help="JSON array of explicitly selected ATP spider names"
@@ -71,6 +82,16 @@ class Command(BaseCommand):
             "algorithm_version": ALGORITHM_VERSION,
         }
         prior_import = None
+        enrichment = None
+        if options["enrichment_report"]:
+            enrichment = json.loads(Path(options["enrichment_report"]).read_text())
+            if enrichment.get("status") != "completed":
+                raise CommandError("The enrichment report must describe applied updates")
+            report["locality_enrichment"] = {
+                "version": enrichment["version"],
+                "report": options["enrichment_report"],
+                "changes": enrichment["changes"],
+            }
         if options["reuse_import_report"]:
             if not options["acquisition_report"]:
                 raise CommandError("--reuse-import-report requires --acquisition-report")
@@ -168,6 +189,18 @@ class Command(BaseCommand):
                         raise CommandError(
                             f"Database record count does not match the {source} import"
                         )
+                    if enrichment:
+                        records = SourcePlace.objects.filter(
+                            provider=source, release=manifest["release"]
+                        )
+                        expected = enrichment["after"][source]
+                        if (
+                            records.filter(city_key="").count() != expected["indexed_city_missing"]
+                            or records.filter(state="").count() != expected["indexed_state_missing"]
+                        ):
+                            raise CommandError(
+                                "The database does not match the locality enrichment audit"
+                            )
                     report["sources"][source] = {
                         **manifest,
                         "status": "imported",
@@ -243,16 +276,20 @@ class Command(BaseCommand):
         source_coordinates = Counter()
         highest_sources = Counter()
         comparison_rows = {}
+        candidate_key_cache = {}
         with (
             (output / "geocodes.csv").open("w", newline="") as csv_stream,
             (output / "geocodes.jsonl").open("w") as json_stream,
             (output / "per-source.jsonl").open("w") as source_stream,
+            (output / "source-comparison.csv").open("w", newline="") as comparison_stream,
         ):
             writer = csv.DictWriter(
                 csv_stream,
                 fieldnames=CSV_FIELDS,
             )
             writer.writeheader()
+            source_writer = csv.DictWriter(comparison_stream, fieldnames=SOURCE_COMPARISON_FIELDS)
+            source_writer.writeheader()
             for index, location in enumerate(locations.iterator(), start=1):
                 query = CanonicalAddress.model_validate(location.address)
                 run = resolve(
@@ -260,12 +297,16 @@ class Command(BaseCommand):
                     location,
                     source_scope=scope,
                     acquisition_incomplete=acquisition_incomplete,
+                    candidate_key_cache=candidate_key_cache,
                 )
                 counts[run.status] += 1
                 report["scoring"] = run.result["scoring"]
                 row = comparison_row(location.external_id, query, run.result, run.pk)
                 writer.writerow(row)
                 comparison_rows[location.external_id] = row
+                source_writer.writerows(
+                    source_comparison_rows(location.external_id, query, run.result)
+                )
                 if run.result["highest_matching_source"]:
                     highest_sources[run.result["highest_matching_source"]] += 1
                 json_stream.write(
@@ -314,6 +355,7 @@ class Command(BaseCommand):
         report["per_source"] = {source: dict(values) for source, values in per_source.items()}
         report["source_candidate_coordinates"] = dict(source_coordinates)
         report["highest_matching_sources"] = dict(highest_sources)
+        report.update(write_analysis_exports(output, comparison_rows))
         report["enriched_input_rows"] = enrich_input_csv(
             options["csv"], output / "fuel-prices-geocoded.csv", comparison_rows
         )
